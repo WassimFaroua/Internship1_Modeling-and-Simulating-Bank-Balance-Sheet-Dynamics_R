@@ -1,0 +1,544 @@
+---
+title: "Distributions"
+oupa5ut: html_document
+date: "2023-08-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(openxlsx)
+library(car)
+library(shiny)
+library(MASS)
+library(tidyverse)
+library(rstan)
+library(ggpubr)
+library(fitdistrplus)
+library(nortest)
+library(fitur)
+library(MASS)
+library(actuar)
+library(moments)
+library(AID)
+library(stats)
+library(FAdist)#weibull3
+library(forecast)
+library(knitr)
+library(robustbase)
+library(mixtools)
+b<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem.xlsx")
+# Sample data
+#year <- c(2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015)
+#fitur::fit_dist_addin()
+```
+
+
+
+# AC12
+
+
+```{r}
+ac12<-rev(b$ac1+b$ac2)
+hist(ac12)
+ggdensity(ac12, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(ac12)
+plotdist(ac12, histo= FALSE, demp = TRUE)
+shapiro.test(ac12)
+ks.test(ac12,"pnorm")
+ad.test(ac12)
+descdist(data =ac12, discrete =FALSE)
+S <- sqrt(mean((ac12 - min(ac12))^2))
+sqrt(6) / pi * S / ((sqrt(mean((ac12 - min(ac12))^2)))^2)
+init <- list(shape = sqrt(6) / pi * S / ((sqrt(mean((ac12 - min(ac12))^2)))^2), scale = sqrt(mean((ac12 - min(ac12))^2)), thres = min(ac12))  
+wac12= fitdist(ac12,"weibull3",method="mge",start =init)
+gofstat(wac12,fitnames=c("weibull3"))
+bc12<- boxcoxnc(ac12, method = "mle", lambda = seq(-2,2,0.0001))
+#bc12$lambda.hat
+shapiro.test(bc12$tf.data)#transformed data normality
+```
+
+
+#### Conclusion: AC12 ~ 3-parameter weibull (shape=1,27236,	scale=341964, thres=229170)
+#### les tests de normalité de AC 12 sont bons AC12 ~ N(mean=548453.8,sd=227332.1) (could be considered).
+#### La transformation de BoxCox n'est pas necessaire puisque la variable AC12 est presque normale. 
+
+
+# AC3
+
+```{r}
+hist(b$ac3)
+ggdensity(b$ac3, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(b$ac3)
+plotdist(b$ac3, histo= FALSE, demp = TRUE)
+shapiro.test(b$ac3)
+ad.test(b$ac3)
+descdist(data =b$ac3, discrete =FALSE)
+lac3= fitdist(b$ac3,"logis")
+llac3= fitdist(log(b$ac3),"logis")
+l3<-list(lac3,llac3)
+print(l3)
+```
+
+
+#### Conclusion: AC3 ~ logistic ($\mu$:location = 5982000,	s:scale=164391).
+#### le log(AC3) ~ logistic ($\mu$:location = 15,60390,	s:scale=	0,02728), ceci est équivalent à dire AC3 ~ log-logistic ($\mu$:location = 15,60390,	s:scale=	0,02728).
+#### On pourra aussi appliquer la transformation de BoxCox ; $\lambda=-3$ (minitab) sur la variable AC3 pour la normaliser. 
+
+
+## AC45
+
+```{r}
+ac45<-b$ac4+b$ac5
+hist(ac45)
+ggdensity(ac45, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(ac45)
+plotdist(ac45, histo= FALSE, demp = TRUE)
+shapiro.test(ac45)
+ad.test(ac45)
+descdist(data =ac45, discrete =FALSE)
+S <- sqrt(mean((ac45 - min(ac45))^2))
+sqrt(6) / pi * S / ((sqrt(mean((ac45 - min(ac45))^2)))^2)
+init45 <- list(shape = sqrt(6) / pi * S / ((sqrt(mean((ac45 - min(ac45))^2)))^2), scale = sqrt(mean((ac45 - min(ac45))^2)), thres = min(ac45))  
+wac45= fitdist(ac45,"weibull3",method="mge",start =init45)
+```
+
+
+#### Conclusion: AC45 ~ 3-parameter weibull (shape=1359,84798,	scale=457094000, thres=-455148000)
+#### On pourra aussi appliquer la transformation de BoxCox; $\lambda=2$ (minitab) sur la variable AC3 pour la normaliser.
+
+
+## AC6
+
+```{r}
+ac6<-b$ac6
+hist(ac6)
+ggdensity(ac6, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(ac6)
+plotdist(ac6, histo= FALSE, demp = TRUE)
+shapiro.test(ac6)
+ad.test(ac6)
+descdist(data =ac6, discrete =FALSE)
+jtac6<-1.14174 + 0.522007*log( ( ac6 - 109374 ) / ( 424867 - ac6 ) )
+shapiro.test(jtac6)
+```
+
+
+
+#### Conclusion: AC6 ~ 3-parameter weibull (shape=0,82878,	scale=61604,88454, thres=107917).
+#### On pourra aussi appliquer la transformation de Johnson sur la variable AC6 pour la normaliser, les données transformées sont presque normales. On appliquera la formule suivante sur les données :1.14174 + 0.522007*log( ( ac6 - 109374 ) / ( 424867 - ac6 ) ).
+
+
+
+## AC7
+
+```{r}
+ac7<-b$ac7
+hist(ac7)
+ggdensity(ac7, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(ac7)
+plotdist(ac7, histo= FALSE, demp = TRUE)
+shapiro.test(ac7)
+ad.test(ac7)
+descdist(data =ac7, discrete =FALSE)
+jtac7<-0.0375501+0.478592*log((ac7-61348.7)/(236502-ac7))
+shapiro.test(jtac7)
+```
+
+#### On n'est pas arrivé à ajuster la variable AC7 en utilisant les distributions usuelles. La meilleure solution est d'appliquer la transformation de Johnson sur la variable AC7 pour la normaliser. On appliquera la formule suivante sur les données :0.0375501+0.478592*log((ac7-61348.7)/(236502-ac7)) (minitab).
+
+
+## PA12
+
+```{r}
+pa12<-b$pa1+b$pa2
+hist(pa12)
+ggdensity(pa12, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(pa12)
+plotdist(pa12, histo= FALSE, demp = TRUE)
+shapiro.test(pa12)
+ad.test(pa12)
+descdist(data =pa12, discrete =FALSE)
+npa12=fitdist(pa12,"norm")
+```
+
+#### les tests de normalité de PA12 sont très bons PA12 ~ N(mean=1098202,sd=265476)
+
+
+## PA3
+
+```{r}
+pa3<-b$pa3
+hist(pa3)
+ggdensity(pa3, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(pa3)
+plotdist(pa3, histo= FALSE, demp = TRUE)
+shapiro.test(pa3)
+ad.test(pa3)
+descdist(data =pa3, discrete =FALSE)
+jtpa3<-pa3-1.88580 +1.37143 * asinh((pa3-4805082) / 299124)
+shapiro.test(jtpa3)
+```
+
+
+
+#### Conclusion: PA3 ~ 3-parameter weibull (shape=1,47545,	scale=902426, thres= 4738030).
+
+#### On pourra aussi appliquer la transformation de Johnson sur la variable PA3 pour la normaliser, les données transformées sont presque normales. On appliquera la formule suivante sur les données :pa3-1.88580 +1.37143 * asinh((pa3-4805082) / 299124)
+
+
+## PA4
+
+```{r}
+pa4<-b$pa4
+hist(pa4)
+ggdensity(pa4, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(pa4)
+plotdist(pa4, histo= FALSE, demp = TRUE)
+shapiro.test(pa4)
+ad.test(pa4)
+descdist(data =pa4, discrete =FALSE)
+npa4=fitdist(pa4,"norm")
+```
+
+
+#### les tests de normalité de PA4 sont très bons PA4 ~ N(mean= 897246 ,sd=49134)
+
+
+
+## PA5
+
+```{r}
+pa5<-b$pa5
+hist(pa5)
+ggdensity(pa5, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(pa5)
+plotdist(pa5, histo= FALSE, demp = TRUE)
+shapiro.test(pa5)
+ad.test(pa5)
+descdist(data =pa5, discrete =FALSE)
+npa5=fitdist(pa5,"norm")
+```
+
+#### les tests de normalité de PA5 sont très bons PA5 ~ N(mean= 205305 ,sd=36894)
+
+
+# Total des passifs: TP
+
+```{r}
+tp<-b$tp
+hist(tp)
+ggdensity(tp, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(tp)
+plotdist(tp, histo= FALSE, demp = TRUE)
+shapiro.test(tp)
+ad.test(tp)
+descdist(data =tp, discrete =FALSE)
+ntp=fitdist(tp,"norm")
+```
+
+#### les tests de normalité de TP sont très bons TP  ~ N(mean= 7755721 ,sd= 630389)
+
+
+## CP1
+
+#### CP1 représente le capital de la banque, qui a connu deux augmentations en 2015 et 2017 avant de se stabiliser à la valeur de 132 405 000 dinars. Nous considérerons donc la valeur de CP1 comme une constante; CP1= 132 405 (en mille dinars) 
+
+
+## CP2
+
+```{r}
+cp2<-b$cp2
+hist(cp2)
+ggdensity(cp2, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(cp2)
+plotdist(cp2, histo= FALSE, demp = TRUE)
+shapiro.test(cp2)
+ad.test(cp2)
+descdist(data =cp2, discrete =FALSE)
+lcp2=fitdist(cp2,"lnorm")
+
+```
+
+#### Conclusion: CP2 ~ LogNormal(mean= 13.344 , sd=0.318), en d'autre termes log(CP2) ~ N(mean= 13.344 , sd=0.318).
+
+
+
+## CP4
+
+#### CP4 représente la valeur des autres capitaux propres, cette valeur est inchangée, elle est de l'ordre de 423 000 dinars. Nous considérerons donc la valeur de CP4 comme une constante; CP4= 423 (en mille dinars)
+
+
+
+## CP5
+
+```{r}
+cp5<-b$cp5
+hist(cp5)
+ggdensity(cp5, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(cp5)
+plotdist(cp5, histo= FALSE, demp = TRUE)
+shapiro.test(cp5)
+ad.test(cp5)
+descdist(data =cp5, discrete =FALSE)
+
+```
+
+#### Data contains outliers and even after applying log to CP5 or eliminating the oultiers we were unable to fit the data.
+
+#### On a utilisé la fonction normalmixEM du package mixtools pour ajuster CP5
+```{r}
+
+ncp5<-normalmixEM(cp5, k = 2)
+print(ncp5)
+
+```
+#### La fonction normalmixEM() a divisé les données en deux sous groupes de données, chaque groupe de données suit une loi normale:
+
+#### Le premier groupe ~ N1($\mu_1$=3.375025,$\sigma_1$=1.932439) avec un poids $\lambda_1$=0.7999767 et le deuxième ~ N2($\mu_2$=18556.336954,$\sigma_2$=18532.502611) avec un poids $\lambda_2$= 0.2000233.
+
+#### Ainsi la variable CP5 suit une loi qu'on note L dont la pdf f est donnée par:
+\begin{equation}
+f(x) = \lambda_1 \cdot f_1(x) + \lambda_2 \cdot f_2(x)
+\end{equation}
+#### avec:
+\begin{equation}
+f_i(x; \mu_i, \sigma_i) = \frac{1}{\sigma_i \sqrt{2\pi}} \cdot e^{-\frac{(x - \mu_i)^2}{2\sigma_i^2}}
+\end{equation}
+
+#### Malgrè l'identification de la loi de CP5 sa manipulation n'est pas pratique.
+
+#### Approche metier CP5: Résultats reportés?
+
+
+## CP6
+
+```{r}
+cp6<-b$cp6
+hist(cp6)
+ggdensity(cp6, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(cp6)
+plotdist(cp6, histo= FALSE, demp = TRUE)
+shapiro.test(cp6)
+ad.test(cp6)
+descdist(data =cp6, discrete =FALSE)
+lcp6=fitdist(cp6,"lnorm")
+```
+
+
+#### Conclusion: CP6 ~ LogNormal(mean= 11.255 , sd=0.413), en d'autre termes log(CP2) ~ N(mean= 11.255 , sd=0.413).
+
+
+
+# Total des capitaux propre: TCP
+
+```{r}
+tcp<-b$tcp
+hist(tcp)
+ggdensity(tcp, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(tcp)
+plotdist(tcp, histo= FALSE, demp = TRUE)
+shapiro.test(tcp)
+ad.test(tcp)
+descdist(data =tcp, discrete =FALSE)
+```
+
+
+#### Conclusion: TCP ~ 3-parameter weibull (shape=1,14583,	scale=320554, thres=565339)
+
+#### On pourra aussi appliquer la transformation de BoxCox; $\lambda= -0.5$ (minitab) sur la variable TCP pour la normaliser.
+
+
+# Total bilan: TB
+
+```{r}
+tb<-b$tb
+hist(tb)
+ggdensity(tb, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+ggqqplot(tb)
+plotdist(tb, histo= FALSE, demp = TRUE)
+shapiro.test(tb)
+ad.test(tb)
+descdist(data =tb, discrete =FALSE)
+ntb=fitdist(tb,"norm")
+```
+
+#### les tests de normalité de TB sont très bons TB ~ N(mean= 8628326 ,sd= 846861)
+
+#### On pourra aussi appliquer la transformation de BoxCox; $\lambda= -0.5 $ (minitab) sur la variable TB pour la normaliser.
+
+
+
+# Tableau récapitulatif
+
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-baqh{text-align:center;vertical-align:top}
+.tg .tg-c3ow{border-color:inherit;text-align:center;vertical-align:top}
+.tg .tg-0pky{border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-0lax{text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+<thead>
+  <tr>
+    <th class="tg-c3ow">Variables </th>
+    <th class="tg-c3ow">Distributions</th>
+    <th class="tg-c3ow">Autres distributions<br>et transformations de normalisation</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td class="tg-0pky">AC12</td>
+    <td class="tg-c3ow">  3-parameter weibull (shape=1,27236, scale=341964, thres=229170)   </td>
+    <td class="tg-c3ow">N(mean=548453.8,sd=227332.1)</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">AC3</td>
+    <td class="tg-c3ow">logistic (μ=5982000,s=164391)</td>
+    <td class="tg-c3ow">BoxCox transformation (λ=−3)</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">AC45</td>
+    <td class="tg-c3ow">3-parameter weibull (shape=1359,84798, scale=457094000, thres=-455148000)</td>
+    <td class="tg-c3ow">BoxCox transformation (λ=2)</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">AC6</td>
+    <td class="tg-c3ow">3-parameters weibull (shape=0,82878, scale=61604,88454, thres=107917).</td>
+    <td class="tg-c3ow">Johnson tranformation<br>1.14174 + 0.522007*log( ( ac6 - 109374 ) / ( 424867 - ac6 ) )</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">AC7</td>
+    <td class="tg-c3ow">---</td>
+    <td class="tg-c3ow">Johnson transformation<br>0.0375501+0.478592*log((ac7-61348.7)/(236502-ac7))</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">PA12</td>
+    <td class="tg-c3ow">N(mean=1098202,sd=265476)</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">PA3</td>
+    <td class="tg-c3ow">3-parameters weibull (shape=1,47545, scale=902426, thres= 4738030)</td>
+    <td class="tg-c3ow">Johnson transformation<br>pa3-1.88580 +1.37143 * asinh((pa3-4805082) / 299124)</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">PA4</td>
+    <td class="tg-c3ow">N(mean= 897246 ,sd=49134)</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">PA5</td>
+    <td class="tg-c3ow">N(mean= 205305 ,sd=36894)</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">TP</td>
+    <td class="tg-c3ow">N(mean= 7755721 ,sd= 630389)</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">CP1</td>
+    <td class="tg-c3ow">CP1= 132 405</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">CP2</td>
+    <td class="tg-c3ow">LogNormal(mean= 13.344 , sd=0.318)</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">CP4</td>
+    <td class="tg-c3ow">CP1= 423</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">CP5</td>
+<td class="tg-0pky" style="text-align: center;">
+    Mixture distribution:
+    N1 ($\mu_1$ = 3.375025, $\sigma_1$ = 1.932439, $\lambda_1$ = 0.7999767)<br>
+    N2 ($\mu_2$ = 18556.336954, $\sigma_2$ = 18532.502611, $\lambda_2$ = 0.2000233)
+</td>
+<td class="tg-0pky" style="text-align: center;">---</td>
+
+  </tr>
+  <tr>
+    <td class="tg-0pky">CP6</td>
+    <td class="tg-c3ow">LogNormal(mean= 11.255 , sd=0.413)</td>
+    <td class="tg-c3ow">---</td>
+  </tr>
+  <tr>
+    <td class="tg-0pky">TCP</td>
+    <td class="tg-c3ow">3-parameter weibull (shape=1,14583,scale=320554,thres=565339)</td>
+    <td class="tg-c3ow">BoxCox transformation (λ=-0.5)</td>
+  </tr>
+  <tr>
+    <td class="tg-0lax">TB</td>
+    <td class="tg-baqh">N(mean= 8628326 ,sd= 846861)</td>
+    <td class="tg-baqh">BoxCox transformation (λ=-0.5)</td>
+  </tr>
+</tbody>
+</table>
+
+
+
+## ANNEXE
+
+
+### The Weibull distribution:
+
+The probability density function (PDF) f is given by : \
+
+\[
+f(x; \lambda, k) = \frac{k}{\lambda} \left(\frac{x}{\lambda}\right)^{k-1} e^{-(x/\lambda)^k}
+\]
+
+Where:
+
+* $\lambda$ is the scale parameter.
+* $k$ is the shape parameter.
+
+### The 3-parameter Weibull distribution: 
+
+
+The probability density function (PDF) f is given by : \
+
+\[
+f(x; \alpha, \beta, \gamma) = \frac{\beta}{\alpha} \left(\frac{x - \gamma}{\alpha}\right)^{\beta - 1} \exp\left[-\left(\frac{x - \gamma}{\alpha}\right)^{\beta}\right]
+\]
+Where:
+
+* $\alpha$ is the scale parameter.
+* $\beta$ is the shape parameter.
+* $\gamma$ is the threshold (location) parameter.
+
+### The logistic distribution:
+
+The probability density function (PDF) f is given by : \
+
+
+\[
+f(x; \mu, s) = \frac{1}{s} \cdot \frac{e^{-(x - \mu)/s}}{(1 + e^{-(x - \mu)/s})^2}
+\]
+
+
+Where:
+
+* $\mu$ is the location parameter.
+* $s$ is the scale parameter.
+
+
+
+### The log-logistic distribution:
+
+\[ X \sim \text{L-Logis}(\mu, s) \leftrightarrow \log(X) \sim \text{Logis}(\mu, s) \]
+
+
+#On pourra utiliser le dashbord shiny pour ajuster les variables de manières interactive
+
+```{r}
+#fitur::fit_dist_addin()
+```

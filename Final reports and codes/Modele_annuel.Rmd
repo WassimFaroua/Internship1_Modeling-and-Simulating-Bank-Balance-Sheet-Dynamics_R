@@ -1,0 +1,798 @@
+---
+title: "Model annuel"
+output: html_document
+date: "2023-09-01"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
+library(FinTS)
+library(stats)
+library(tidyverse)
+library(zoo)
+library(tseries)
+library(TTR)
+library(tseries)
+library(gridExtra)
+library(lmtest)
+library(strucchange)
+library(openxlsx)
+library(minqa)
+library(nloptr)
+library(pander)
+library(rugarch)
+library(KFAS)
+library(seastests)
+library(sae)
+library(urca)
+library(vars)
+library(tsDyn)
+options(scipen = 999,digits=3) 
+ b<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/Bilanc.xlsx")
+ z<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem_trans1.xlsx")
+#bsem<-rbind(b[1:3,],v,b[-(1:3),])
+#write.xlsx(b, "your_original_file.xlsx", rowNames = FALSE)
+ #x=ugarchspec(variance.model =list(garchOrder=c(1,1)),mean.model = list(armarOrder=c(0,0)))
+```
+
+
+# Annual data 
+
+### On se propose de simuler et de prédire le bilan annuel suivant:
+
+```{r echo=FALSE}
+b1<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/Bilans.xlsx")
+cn <- c("2022","2021","2020","2019","2018","2017","2016","2015")
+rn <- c("AC1: Caisse et avoirs auprès de la BCT, CCP et TGT",
+        "AC2: Créances sur les établissements bancaires et financiers",
+        "AC3: Créances sur la clientèle",
+        "AC4: Portefeuille-titres commercial",
+        "AC5: Portefeuille d'investissement",
+        "AC6: Valeurs immobilisées",
+        "AC7: Autres actifs",
+        "Total actifs",
+        "PA1: Banque Centrale et CCP",
+        "PA2: Dépôts et avoirs des établissements bancaires et financiers",
+        "PA3: Dépôts et avoirs de la clientèle",
+        "PA4: Emprunts et Ressources spéciales",
+        "PA5: Autres passifs",
+        "Total passifs",
+        "CP1: Capital",
+        "CP2: Réserves",
+        "CP4: Autres capitaux propres",
+        "CP5: Résultats reportés",
+        "CP6: Résultat de l’exercice",
+        "Total capitaux propres",
+        "Total capitaux propres et passifs")
+
+rownames(b1) <- rn
+
+
+
+
+knitr::kable(b1, col.names = cn, row.names = TRUE)
+```
+
+
+
+#### On va procéder à la modélisation des variables du blian en se basant sur les techniques des séries temporelles.
+
+* La variable AC1 représente un cliché "snapshot" des espèces et équivalents de trésorerie de la banque auprès des institutions financières, il s'agit donc d'une variable qui ne suit pas une tendance bien déterminée puisque sa valeur est enregistrée au hasard.
+
+* La variable AC2 représente les créances sur les établissements bancaires et financiers. Il s'agit d'une variable très volatile du fait de l'abondance des transactions entres les institutions financières.
+
+* Il convient donc de combiner ses deux variables en une variables **AC12** qui contient leur somme.
+
+## AC12
+
+##### Visualisation
+
+
+```{r}
+#####visualisation
+ts.ac12<-ts(rev(b$ac1+b$ac2),start=2015,frequency=1)
+ggtsdisplay(ts.ac12)
+#plot(decompose(ts.ac12))
+```
+
+
+##### Preprocessing/heteroskedasticity_test
+
+```{r}
+BoxCox.lambda(ts.ac12)
+y12<-BoxCox(ts.ac12,lambda = BoxCox.lambda(ts.ac12)) #bxcx(y, lambda, InverseQ=TRUE)
+autoplot(y12)
+```
+
+#### ETS
+
+```{r}
+fit12.ets<-ets(ts.ac12)
+autoplot(fit12.ets)
+summary(fit12.ets)
+checkresiduals(fit12.ets)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fit12.ets$fitted, color = "blue")
+forecast.ets(fit12.ets)
+#ggtsdisplay(fit12.ets$residuals)
+#flat prediction
+```
+
+#### HOLT (ses will give flat prediction/Holt-Winters not applicable_no_periodicity)
+
+```{r}
+
+fit12.holt<-holt(ts.ac12)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+autoplot(fit12.holt)
+summary(fit12.holt)
+checkresiduals(fit12.holt)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fit12.holt$fitted, color = "blue")
+```
+
+```{r eval=FALSE, include=FALSE}
+# fit12.hw<-hw(ts.ac12)
+# # forecast(fit12.holt)
+# autoplot(fit12.hw)
+# summary(fit12.hw)
+# checkresiduals(fit12.hw)
+# autoplot(ts.ac12, color = "white", lwd = 2) +
+#    autolayer(fit12.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.ac12)
+pacf(ts.ac12)
+fit12.arima<-auto.arima(ts.ac12)
+autoplot(fit12.arima)
+summary(fit12.arima)
+checkresiduals(fit12.arima)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fit12.arima$fitted, color = "blue")
+
+```
+
+#### TBATS
+
+
+```{r}
+fit12.TBATS<-tbats(ts.ac12)
+autoplot(fit12.TBATS)
+summary(fit12.TBATS)
+checkresiduals(fit12.TBATS)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fit12.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.ac12, color = "black", lwd = 2) +
+  autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fit12.TBATS$fitted.values, color = "green")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fit12.ets,h=5)), autoplot(forecast(fit12.arima,h=5)), autoplot(forecast(fit12.TBATS,h=5)))
+```
+
+
+```{r}
+f12.ets <- function (y,h) forecast(fit12.ets,h=h)
+f12.holt <- function (y,h) forecast(fit12.holt,h=h)
+f12.TBATS <- function (y,h) forecast(fit12.TBATS,h=h)
+
+hmax<-5
+
+e12.holt<-na.omit(tsCV(y12,f12.holt,h=hmax))[,hmax]
+e12.ets<-na.omit(tsCV(y12,f12.ets,h=hmax))[,hmax]
+# e12.TBATS<-na.omit(tsCV(ts.ac12,f12.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(e12.holt^2,e12.ets^2))
+
+
+#### On opte à priori pour la méthode de HOLT.
+```
+
+
+```{r}
+#### Forecasting
+forecast(fit12.holt)$mean
+# ds <- window(forecast(fit12.holt)$mean, start=2023, end=2027)
+# ds1<-as.vector(ds)
+
+# bxcx(fit12.holt$mean, lambda=BoxCox.lambda(ts.ac12), InverseQ=TRUE)
+# predict(fit12.holt, n.ahead=10)
+```
+
+
+## AC3: Créances sur la clientèle
+
+
+
+##### Visualisation
+
+
+```{r}
+
+#####visualisation
+ts.ac3<-ts(rev(b$ac3),start=2015,frequency=1)
+autoplot(ts.ac3)
+ggtsdisplay(ts.ac3)
+
+```
+
+
+##### Preprocessing/heteroskedasticity_test
+
+```{r}
+
+BoxCox.lambda(ts.ac3)
+y3<-BoxCox(ts.ac12,lambda = BoxCox.lambda(ts.ac3))
+autoplot(y3)
+ggtsdisplay(y3)
+```
+
+#### HOLT (no SES/HW)
+```{r}
+
+# er<- function(p) {
+#   alpha <- p[1]
+#   beta <- p[2]
+#   holt_fit <- holt(ts.ac3, alpha = alpha, beta = beta)
+#   e<- mean((ts.ac3 - holt_fit$mean)^2)
+#   return(e)
+# }
+# limites<- c(0, 1)
+# p_init<- c(0.4, 0.4)
+# opt<- optim(p_init, fn = er)
+#
+# opt<-bobyqa(p_init, fn = er, lower = limites[1], upper = limites[2])
+fit3.holt<-holt(ts.ac3)
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.holt$fitted, color = "blue")
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit3.holt)
+# summary(fit3.holt)
+# checkresiduals(fit3.holt)
+```
+
+
+####ARIMA
+
+AC3 Shows no seasonality and very little to unexisting correlation == arima not a suitable candidate.
+
+#### TBATS
+
+```{r}
+fit3.TBATS<-tbats(y3)
+plot(y3)
+lines(fit3.TBATS$fitted.values)
+autoplot(fit3.TBATS)
+summary(fit3.TBATS)
+checkresiduals(fit3.TBATS)
+
+#no good
+```
+
+
+## AC4: Portefeuille-titres commercial et AC5: Portefeuille d’investissement:
+
+* En se basant sur le bilan type (simplifié) de la banque il convient de combiner ces deux variables en une seule qui contient leur somme **AC45**.
+
+![](C:/Users/wassi/OneDrive/Bureau/pics/bb.png)
+
+
+
+## AC45
+
+```{r}
+ts.ac45<-ts(rev(b$ac4+b$ac5),start=2015,frequency=1)
+autoplot(ts.ac45)
+ggtsdisplay(ts.ac45)
+```
+
+
+```{r}
+fit45.holt<-holt(ts.ac45)
+autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fit45.holt$fitted, color = "blue")
+```
+
+## AC6: Valeurs immobilisées
+
+```{r}
+
+ts.ac6<-ts(rev(b$ac6),start=2015,frequency=1)
+autoplot(ts.ac6)
+ggtsdisplay(ts.ac6)
+```
+
+
+```{r}
+
+fit6.holt<-holt(ts.ac6,alpha=0.8,beta=0.15)
+autoplot(ts.ac6, color = "white", lwd = 2) +
+   autolayer(fit6.holt$fitted, color = "blue")
+summary(fit6.holt)
+```
+
+
+##AC7: Autres actifs
+
+```{r}
+
+ts.ac7<-ts(rev(b$ac7),start=2015,frequency=1)
+autoplot(ts.ac7)
+ggtsdisplay(ts.ac7)
+```
+
+
+```{r}
+fit7.holt<-holt(ts.ac7 )
+autoplot(ts.ac7, color = "white", lwd = 2) +
+   autolayer(fit7.holt$fitted, color = "blue")
+summary(fit7.holt)
+```
+
+
+#### PA1 et PA2:
+* Les variables du passif; PA1: Banque Centrale et CCP	et PA2: Dépôts et avoirs des établissements bancaires et financiers, sont analogues aux variables AC1 et AC2, sauf qu'elles reflètent les engagements financiers de la banque. En d'autres termes, ce que la banque est tenue de rembouser aux autres institutions.
+
+* Il convient donc de les combiner en une variable somme  **PA12**
+
+
+```{r}
+ts.pa12<-ts(rev(b$pa1+b$pa2),start=2015,frequency=1)
+autoplot(ts.pa12)
+ggtsdisplay(ts.pa12)
+
+```
+
+
+```{r}
+
+fitp12.holt<-holt(ts.pa12, alpha = 0.9106, beta  = 0.68)
+autoplot(ts.pa12, color = "white", lwd = 2) +
+   autolayer(fitp12.holt$fitted, color = "blue")
+summary(fitp12.holt)
+```
+
+
+# PA3: Dépôts et avoirs de la clientèle
+
+```{r}
+
+ts.pa3<-ts(rev(b$pa3),start=2015,frequency=1)
+autoplot(ts.pa3)
+ggtsdisplay(ts.pa3)
+```
+
+
+```{r}
+
+fitp3.holt<-holt(ts.pa3,alpha = 0.7612, beta  = 0.4)
+autoplot(ts.pa3, color = "white", lwd = 2) +
+   autolayer(fitp3.holt$fitted, color = "blue")
+summary(fitp3.holt)
+```
+
+
+# PA4: Emprunts et Ressources spéciales
+
+```{r}
+ts.pa4<-ts(rev(b$pa4),start=2015,frequency=1)
+autoplot(ts.pa4)
+ggtsdisplay(ts.pa4)
+
+```
+
+
+```{r}
+fitp4.holt<-holt(ts.pa4)
+autoplot(ts.pa4, color = "white", lwd = 2) +
+   autolayer(fitp4.holt$fitted, color = "blue")
+summary(fitp4.holt)
+
+```
+
+# PA5: Autres passifs
+
+```{r}
+ts.pa5<-ts(rev(b$pa5),start=2015,frequency=1)
+autoplot(ts.pa5)
+ggtsdisplay(ts.pa5)
+
+```
+
+
+```{r}
+fitp5.holt<-holt(ts.pa5,alpha=0.9,beta=0.9)
+autoplot(ts.pa5, color = "white", lwd = 2) +
+   autolayer(fitp5.holt$fitted, color = "blue")
+summary(fitp5.holt)
+
+```
+
+
+# CP1: Capital
+
+```{r}
+ts.cp1<-ts(rev(b$cp1),start=2015,frequency=1)
+autoplot(ts.cp1)
+ggtsdisplay(ts.cp1)
+
+```
+
+
+```{r}
+fitcp1.holt<-holt(ts.cp1)
+autoplot(ts.cp1, color = "white", lwd = 2) +
+   autolayer(fitcp1.holt$fitted, color = "blue")
+summary(fitcp1.holt)
+
+```
+
+## CP2: Réserves.
+
+```{r}
+ts.cp2<-ts(rev(b$cp2),start=2015,frequency=1)
+autoplot(ts.cp2)
+ggtsdisplay(ts.cp2)
+
+```
+
+
+```{r}
+fitcp2.holt<-holt(ts.cp2)
+autoplot(ts.cp2, color = "white", lwd = 2) +
+   autolayer(fitcp2.holt$fitted, color = "blue")
+summary(fitcp2.holt)
+
+```
+
+
+
+# CP5: Résultats reportés
+```{r}
+ts.cp5<-ts(rev(b$cp5),start=2015,frequency=1)
+autoplot(ts.cp5)
+ggtsdisplay(ts.cp5)
+
+```
+
+
+```{r}
+fitcp5.holt<-holt(ts.cp5)
+autoplot(ts.cp5, color = "white", lwd = 2) +
+   autolayer(fitcp5.holt$fitted, color = "blue")
+summary(fitcp5.holt)
+
+```
+
+
+
+# CP6: Résultat de l’exercice
+
+
+```{r}
+ts.cp6<-ts(rev(b$cp6),start=2015,frequency=1)
+autoplot(ts.cp6)
+ggtsdisplay(ts.cp6)
+
+```
+
+
+```{r}
+fitcp6.holt<-holt(ts.cp6)
+autoplot(ts.cp6, color = "white", lwd = 2) +
+   autolayer(fitcp6.holt$fitted, color = "blue")
+summary(fitcp6.holt)
+
+```
+
+# CP4: Autres capitaux propres
+
+
+```{r}
+ts.cp4<-ts(rev(b$cp4),start=2015,frequency=1)
+autoplot(ts.cp4)
+ggtsdisplay(ts.cp4)
+
+```
+
+
+```{r}
+fitcp4.holt<-holt(ts.cp4)
+autoplot(ts.cp4, color = "white", lwd = 2) +
+   autolayer(fitcp4.holt$fitted, color = "blue")
+summary(fitcp4.holt)
+
+```
+
+
+
+
+# Bilan annuel simulé
+
+
+```{r include=FALSE}
+
+bsf<-data.frame()
+bsf<-rbind(z[1,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[2,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[3,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[4,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[5,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[6,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[7,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[8,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[9,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[10,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[11,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[12,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[13,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[14,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[15,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[16,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[17,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")],z[18,c("dec_2022","dec_2021","dec_2020","dec_2019","dec_2018","dec_2017","dec_2016","dec_2015")])
+
+cn1 <- c("2015","2016","2017","2018","2019","2020","2021","2022")
+rn1 <- c("AC12: Caisse et avoirs auprès de la BCT, CCP et TGT + Créances sur les établissements bancaires et financiers",
+        "AC3: Créances sur la clientèle",
+        "AC45: Portefeuille-titres commercial et Portefeuille d'investissement",
+        "AC6: Valeurs immobilisées",
+        "AC7: Autres actifs",
+        "Total actifs",
+        "PA12: Banque Centrale et CCP et Dépôts et avoirs des établissements bancaires et financiers",
+        "PA3: Dépôts et avoirs de la clientèle",
+        "PA4: Emprunts et Ressources spéciales",
+        "PA5: Autres passifs",
+        "Total passifs",
+        "CP1: Capital",
+        "CP2: Réserves",
+        "CP4: Autres capitaux propres",
+        "CP5: Résultats reportés",
+        "CP6: Résultat de l’exercice",
+        "Total capitaux propres",
+        "Total capitaux propres et passifs")
+
+rownames(bsf) <- rn1
+
+
+
+
+knitr::kable(bsf, col.names = cn1, row.names = TRUE)
+
+
+```
+
+
+```{r echo=FALSE}
+
+fita15<-c(as.numeric(window(fit12.holt$fitted, start=2015, end=2015)),as.numeric(window(fit3.holt$fitted, start=2015, end=2015)),as.numeric(window(fit45.holt$fitted, start=2015, end=2015)),as.numeric(window(fit6.holt$fitted, start=2015, end=2015)),as.numeric(window(fit7.holt$fitted, start=2015, end=2015)))
+
+fitp15<-c(as.numeric(window(fitp12.holt$fitted, start=2015, end=2015)),as.numeric(window(fitp3.holt$fitted, start=2015, end=2015)),as.numeric(window(fitp4.holt$fitted, start=2015, end=2015)),as.numeric(window(fitp5.holt$fitted, start=2015, end=2015)))
+
+
+fitcp15<-c(as.numeric(window(fitcp1.holt$fitted, start=2015, end=2015)),as.numeric(window(fitcp2.holt$fitted, start=2015, end=2015)),as.numeric(window(fitcp4.holt$fitted, start=2015, end=2015)),as.numeric(window(fitcp5.holt$fitted, start=2015, end=2015)),as.numeric(window(fitcp6.holt$fitted, start=2015, end=2015)))
+
+
+fit15<-c(fita15,sum(fita15),fitp15,sum(fitp15),fitcp15,sum(fitcp15),sum(fitcp15)+sum(fitp15))
+```
+
+
+```{r echo=FALSE}
+
+fita16<-c(as.numeric(window(fit12.holt$fitted, start=2016, end=2016)),as.numeric(window(fit3.holt$fitted, start=2016, end=2016)),as.numeric(window(fit45.holt$fitted, start=2016, end=2016)),as.numeric(window(fit6.holt$fitted, start=2016, end=2016)),as.numeric(window(fit7.holt$fitted, start=2016, end=2016)))
+
+fitp16<-c(as.numeric(window(fitp12.holt$fitted, start=2016, end=2016)),as.numeric(window(fitp3.holt$fitted, start=2016, end=2016)),as.numeric(window(fitp4.holt$fitted, start=2016, end=2016)),as.numeric(window(fitp5.holt$fitted, start=2016, end=2016)))
+
+
+fitcp16<-c(as.numeric(window(fitcp1.holt$fitted, start=2016, end=2016)),as.numeric(window(fitcp2.holt$fitted, start=2016, end=2016)),as.numeric(window(fitcp4.holt$fitted, start=2016, end=2016)),as.numeric(window(fitcp5.holt$fitted, start=2016, end=2016)),as.numeric(window(fitcp6.holt$fitted, start=2016, end=2016)))
+
+
+fit16<-c(fita16,sum(fita16),fitp16,sum(fitp16),fitcp16,sum(fitcp16),sum(fitcp16)+sum(fitp16))
+
+```
+
+
+
+```{r echo=FALSE}
+
+fita17<-c(as.numeric(window(fit12.holt$fitted, start=2017, end=2017)),as.numeric(window(fit3.holt$fitted, start=2017, end=2017)),as.numeric(window(fit45.holt$fitted, start=2017, end=2017)),as.numeric(window(fit6.holt$fitted, start=2017, end=2017)),as.numeric(window(fit7.holt$fitted, start=2017, end=2017)))
+
+fitp17<-c(as.numeric(window(fitp12.holt$fitted, start=2017, end=2017)),as.numeric(window(fitp3.holt$fitted, start=2017, end=2017)),as.numeric(window(fitp4.holt$fitted, start=2017, end=2017)),as.numeric(window(fitp5.holt$fitted, start=2017, end=2017)))
+
+
+fitcp17<-c(as.numeric(window(fitcp1.holt$fitted, start=2017, end=2017)),as.numeric(window(fitcp2.holt$fitted, start=2017, end=2017)),as.numeric(window(fitcp4.holt$fitted, start=2017, end=2017)),as.numeric(window(fitcp5.holt$fitted, start=2017, end=2017)),as.numeric(window(fitcp6.holt$fitted, start=2017, end=2017)))
+
+
+fit17<-c(fita17,sum(fita17),fitp17,sum(fitp17),fitcp17,sum(fitcp17),sum(fitcp17)+sum(fitp17))
+
+```
+
+
+```{r echo=FALSE}
+
+fita18<-c(as.numeric(window(fit12.holt$fitted, start=2018, end=2018)),as.numeric(window(fit3.holt$fitted, start=2018, end=2018)),as.numeric(window(fit45.holt$fitted, start=2018, end=2018)),as.numeric(window(fit6.holt$fitted, start=2018, end=2018)),as.numeric(window(fit7.holt$fitted, start=2018, end=2018)))
+
+fitp18<-c(as.numeric(window(fitp12.holt$fitted, start=2018, end=2018)),as.numeric(window(fitp3.holt$fitted, start=2018, end=2018)),as.numeric(window(fitp4.holt$fitted, start=2018, end=2018)),as.numeric(window(fitp5.holt$fitted, start=2018, end=2018)))
+
+
+fitcp18<-c(as.numeric(window(fitcp1.holt$fitted, start=2018, end=2018)),as.numeric(window(fitcp2.holt$fitted, start=2018, end=2018)),as.numeric(window(fitcp4.holt$fitted, start=2018, end=2018)),as.numeric(window(fitcp5.holt$fitted, start=2018, end=2018)),as.numeric(window(fitcp6.holt$fitted, start=2018, end=2018)))
+
+
+fit18<-c(fita18,sum(fita18),fitp18,sum(fitp18),fitcp18,sum(fitcp18),sum(fitcp18)+sum(fitp18))
+
+```
+
+
+```{r echo=FALSE}
+
+fita19<-c(as.numeric(window(fit12.holt$fitted, start=2019, end=2019)),as.numeric(window(fit3.holt$fitted, start=2019, end=2019)),as.numeric(window(fit45.holt$fitted, start=2019, end=2019)),as.numeric(window(fit6.holt$fitted, start=2019, end=2019)),as.numeric(window(fit7.holt$fitted, start=2019, end=2019)))
+
+fitp19<-c(as.numeric(window(fitp12.holt$fitted, start=2019, end=2019)),as.numeric(window(fitp3.holt$fitted, start=2019, end=2019)),as.numeric(window(fitp4.holt$fitted, start=2019, end=2019)),as.numeric(window(fitp5.holt$fitted, start=2019, end=2019)))
+
+
+fitcp19<-c(as.numeric(window(fitcp1.holt$fitted, start=2019, end=2019)),as.numeric(window(fitcp2.holt$fitted, start=2019, end=2019)),as.numeric(window(fitcp4.holt$fitted, start=2019, end=2019)),as.numeric(window(fitcp5.holt$fitted, start=2019, end=2019)),as.numeric(window(fitcp6.holt$fitted, start=2019, end=2019)))
+
+
+fit19<-c(fita19,sum(fita19),fitp19,sum(fitp19),fitcp19,sum(fitcp19),sum(fitcp19)+sum(fitp19))
+
+```
+
+
+```{r echo=FALSE}
+
+fita20<-c(as.numeric(window(fit12.holt$fitted, start=2020, end=2020)),as.numeric(window(fit3.holt$fitted, start=2020, end=2020)),as.numeric(window(fit45.holt$fitted, start=2020, end=2020)),as.numeric(window(fit6.holt$fitted, start=2020, end=2020)),as.numeric(window(fit7.holt$fitted, start=2020, end=2020)))
+
+fitp20<-c(as.numeric(window(fitp12.holt$fitted, start=2020, end=2020)),as.numeric(window(fitp3.holt$fitted, start=2020, end=2020)),as.numeric(window(fitp4.holt$fitted, start=2020, end=2020)),as.numeric(window(fitp5.holt$fitted, start=2020, end=2020)))
+
+
+fitcp20<-c(as.numeric(window(fitcp1.holt$fitted, start=2020, end=2020)),as.numeric(window(fitcp2.holt$fitted, start=2020, end=2020)),as.numeric(window(fitcp4.holt$fitted, start=2020, end=2020)),abs(as.numeric(window(fitcp5.holt$fitted, start=2020, end=2020))),as.numeric(window(fitcp6.holt$fitted, start=2020, end=2020)))
+
+
+fit20<-c(fita20,sum(fita20),fitp20,sum(fitp20),fitcp20,sum(fitcp20),sum(fitcp20)+sum(fitp20))
+
+```
+
+
+```{r echo=FALSE}
+
+fita21<-c(as.numeric(window(fit12.holt$fitted, start=2021, end=2021)),as.numeric(window(fit3.holt$fitted, start=2021, end=2021)),as.numeric(window(fit45.holt$fitted, start=2021, end=2021)),as.numeric(window(fit6.holt$fitted, start=2021, end=2021)),as.numeric(window(fit7.holt$fitted, start=2021, end=2021)))
+
+fitp21<-c(as.numeric(window(fitp12.holt$fitted, start=2021, end=2021)),as.numeric(window(fitp3.holt$fitted, start=2021, end=2021)),as.numeric(window(fitp4.holt$fitted, start=2021, end=2021)),as.numeric(window(fitp5.holt$fitted, start=2021, end=2021)))
+
+
+fitcp21<-c(as.numeric(window(fitcp1.holt$fitted, start=2021, end=2021)),as.numeric(window(fitcp2.holt$fitted, start=2021, end=2021)),as.numeric(window(fitcp4.holt$fitted, start=2021, end=2021)),as.numeric(window(fitcp5.holt$fitted, start=2021, end=2021)),as.numeric(window(fitcp6.holt$fitted, start=2021, end=2021)))
+
+
+fit21<-c(fita21,sum(fita21),fitp21,sum(fitp21),fitcp21,sum(fitcp21),sum(fitcp21)+sum(fitp21))
+
+```
+
+
+```{r echo=FALSE}
+
+fita22<-c(as.numeric(window(fit12.holt$fitted, start=2022, end=2022)),as.numeric(window(fit3.holt$fitted, start=2022, end=2022)),as.numeric(window(fit45.holt$fitted, start=2022, end=2022)),as.numeric(window(fit6.holt$fitted, start=2022, end=2022)),as.numeric(window(fit7.holt$fitted, start=2022, end=2022)))
+
+fitp22<-c(as.numeric(window(fitp12.holt$fitted, start=2022, end=2022)),as.numeric(window(fitp3.holt$fitted, start=2022, end=2022)),as.numeric(window(fitp4.holt$fitted, start=2022, end=2022)),as.numeric(window(fitp5.holt$fitted, start=2022, end=2022)))
+
+
+fitcp22<-c(as.numeric(window(fitcp1.holt$fitted, start=2022, end=2022)),as.numeric(window(fitcp2.holt$fitted, start=2022, end=2022)),as.numeric(window(fitcp4.holt$fitted, start=2022, end=2022)),as.numeric(window(fitcp5.holt$fitted, start=2022, end=2022)),as.numeric(window(fitcp6.holt$fitted, start=2022, end=2022)))
+
+
+fit22<-c(fita22,sum(fita22),fitp22,sum(fitp22),fitcp22,sum(fitcp22),sum(fitcp22)+sum(fitp22))
+
+```
+
+
+
+
+```{r echo=FALSE}
+
+fita23<-c(as.numeric(window(fit12.holt$mean, start=2023, end=2023),as.numeric(window(fit3.holt$mean, start=2023, end=2023))),as.numeric(window(fit45.holt$mean, start=2023, end=2023)),as.numeric(window(fit6.holt$mean, start=2023, end=2023)),as.numeric(window(fit7.holt$mean, start=2023, end=2023)))
+
+fitp23<-c(as.numeric(window(fitp12.holt$mean, start=2023, end=2023)),as.numeric(window(fitp3.holt$mean, start=2023, end=2023)),as.numeric(window(fitp4.holt$mean, start=2023, end=2023)),as.numeric(window(fitp5.holt$mean, start=2023, end=2023)))
+
+
+fitcp23<-c(as.numeric(window(fitcp1.holt$mean, start=2023, end=2023)),as.numeric(window(fitcp2.holt$mean, start=2023, end=2023)),as.numeric(window(fitcp4.holt$mean, start=2023, end=2023)),as.numeric(window(fitcp5.holt$mean, start=2023, end=2023)),as.numeric(window(fitcp6.holt$mean, start=2023, end=2023)))
+
+
+fit23<-c(fita23,sum(fita23),fitp23,sum(fitp23),fitcp23,sum(fitcp23),sum(fitcp23)+sum(fitp23))
+
+```
+
+
+```{r echo=FALSE}
+
+fita24<-c(as.numeric(window(fit12.holt$mean, start=2024, end=2024)),as.numeric(window(fit3.holt$mean, start=2024, end=2024)),as.numeric(window(fit45.holt$mean, start=2024, end=2024)),as.numeric(window(fit6.holt$mean, start=2024, end=2024)),as.numeric(window(fit7.holt$mean, start=2024, end=2024)))
+
+fitp24<-c(as.numeric(window(fitp12.holt$mean, start=2024, end=2024)),as.numeric(window(fitp3.holt$mean, start=2024, end=2024)),as.numeric(window(fitp4.holt$mean, start=2024, end=2024)),as.numeric(window(fitp5.holt$mean, start=2024, end=2024)))
+
+
+fitcp24<-c(as.numeric(window(fitcp1.holt$mean, start=2024, end=2024)),as.numeric(window(fitcp2.holt$mean, start=2024, end=2024)),as.numeric(window(fitcp4.holt$mean, start=2024, end=2024)),as.numeric(window(fitcp5.holt$mean, start=2024, end=2024)),as.numeric(window(fitcp6.holt$mean, start=2024, end=2024)))
+
+
+fit24<-c(fita24,sum(fita24),fitp24,sum(fitp24),fitcp24,sum(fitcp24),sum(fitcp24)+sum(fitp24))
+
+```
+
+
+```{r echo=FALSE}
+
+fita25<-c(as.numeric(window(fit12.holt$mean, start=2025, end=2025)),as.numeric(window(fit3.holt$mean, start=2025, end=2025)),as.numeric(window(fit45.holt$mean, start=2025, end=2025)),as.numeric(window(fit6.holt$mean, start=2025, end=2025)),as.numeric(window(fit7.holt$mean, start=2025, end=2025)))
+
+fitp25<-c(as.numeric(window(fitp12.holt$mean, start=2025, end=2025)),as.numeric(window(fitp3.holt$mean, start=2025, end=2025)),as.numeric(window(fitp4.holt$mean, start=2025, end=2025)),as.numeric(window(fitp5.holt$mean, start=2025, end=2025)))
+
+
+fitcp25<-c(as.numeric(window(fitcp1.holt$mean, start=2025, end=2025)),as.numeric(window(fitcp2.holt$mean, start=2025, end=2025)),as.numeric(window(fitcp4.holt$mean, start=2025, end=2025)),as.numeric(window(fitcp5.holt$mean, start=2025, end=2025)),as.numeric(window(fitcp6.holt$mean, start=2025, end=2025)))
+
+
+fit25<-c(fita25,sum(fita25),fitp25,sum(fitp25),fitcp25,sum(fitcp25),sum(fitcp25)+sum(fitp25))
+
+```
+
+
+```{r echo=FALSE}
+
+fita26<-c(as.numeric(window(fit12.holt$mean, start=2026, end=2026)),as.numeric(window(fit3.holt$mean, start=2026, end=2026)),as.numeric(window(fit45.holt$mean, start=2026, end=2026)),as.numeric(window(fit6.holt$mean, start=2026, end=2026)),as.numeric(window(fit7.holt$mean, start=2026, end=2026)))
+
+fitp26<-c(as.numeric(window(fitp12.holt$mean, start=2026, end=2026)),as.numeric(window(fitp3.holt$mean, start=2026, end=2026)),as.numeric(window(fitp4.holt$mean, start=2026, end=2026)),as.numeric(window(fitp5.holt$mean, start=2026, end=2026)))
+
+
+fitcp26<-c(as.numeric(window(fitcp1.holt$mean, start=2026, end=2026)),as.numeric(window(fitcp2.holt$mean, start=2026, end=2026)),as.numeric(window(fitcp4.holt$mean, start=2026, end=2026)),as.numeric(window(fitcp5.holt$mean, start=2026, end=2026)),as.numeric(window(fitcp6.holt$mean, start=2026, end=2026)))
+
+
+fit26<-c(fita26,sum(fita26),fitp26,sum(fitp26),fitcp26,sum(fitcp26),sum(fitcp26)+sum(fitp26))
+
+```
+
+
+```{r echo=FALSE}
+
+fita27<-c(as.numeric(window(fit12.holt$mean, start=2027, end=2027)),as.numeric(window(fit3.holt$mean, start=2027, end=2027)),as.numeric(window(fit45.holt$mean, start=2027, end=2027)),as.numeric(window(fit6.holt$mean, start=2027, end=2027)),as.numeric(window(fit7.holt$mean, start=2027, end=2027)))
+
+fitp27<-c(as.numeric(window(fitp12.holt$mean, start=2027, end=2027)),as.numeric(window(fitp3.holt$mean, start=2027, end=2027)),as.numeric(window(fitp4.holt$mean, start=2027, end=2027)),as.numeric(window(fitp5.holt$mean, start=2027, end=2027)))
+
+
+fitcp27<-c(as.numeric(window(fitcp1.holt$mean, start=2027, end=2027)),as.numeric(window(fitcp2.holt$mean, start=2027, end=2027)),as.numeric(window(fitcp4.holt$mean, start=2027, end=2027)),as.numeric(window(fitcp5.holt$mean, start=2027, end=2027)),as.numeric(window(fitcp6.holt$mean, start=2027, end=2027)))
+
+
+fit27<-c(fita27,sum(fita27),fitp27,sum(fitp27),fitcp27,sum(fitcp27),sum(fitcp27)+sum(fitp27))
+
+```
+
+
+```{r echo=FALSE}
+bs<-data.frame()
+bs<-cbind(bsf$dec_2015,fit15,bsf$dec_2016,fit16,bsf$dec_2017,fit17,bsf$dec_2018,fit18,bsf$dec_2019,fit19,bsf$dec_2020,fit20,bsf$dec_2021,fit21,bsf$dec_2022,fit22,fit23,fit24,fit25,fit26,fit27)
+cn2 <- c("2015","2015_fitted","2016","2016_fitted","2017","2017_fitted","2018","2018_fitted","2019","2019_fitted","2020","2020_fitted","2021","2021_fitted","2022","2022_fitted","2023_forecast","2024_forecast","2025_forecast","2026_forecast","2027_forecast")
+rownames(bs) <- rn1
+knitr::kable(bs, col.names = cn2, row.names = TRUE,caption = "Balance Sheet Comparison: Actual, Fitted, and Predicted Values")
+pander(bs)
+
+```
+
+
+
+## Discussion
+
+```{r}
+error<-c()
+for (i in seq(from = 1, to = 15, by = 2)){
+  actual<-c(bs[,i])
+  predicted<-c(bs[,i+1])
+  relative_error <- abs(actual - predicted) / actual
+  error<-c(error,mean(relative_error))
+}
+print(error)
+ mean(error)
+```
+
+
+
+#### L'ajustement qu'on a effectué prsente une erreur relative d'environ 14.7%. Ce qui peut être justifié par :
+
+* Le fait que le modèle ajusté ne tient pas compte des corrélations entre les variables du bilan.
+
+* Le très petit nombre de données a affecté la qualité du modèle.
+
+* Cette première tentative de simulation a permis une exploration plus approfondie des variables du bilan, tant sur le plan quantitatif que qualitatif. Grâce à cela, nous avons pu simplifier le bilan en combinant plusieurs variables.
+
+* Dans ce qui suit nous allons essayer de diminuer l'erreur en aumgmentant le nombre d'observations (bilan semestriel).

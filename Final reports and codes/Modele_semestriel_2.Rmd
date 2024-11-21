@@ -1,0 +1,948 @@
+---
+title: "Modele_semestriel_2"
+output: html_document
+date: "2023-09-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(openxlsx)
+library(car)
+library(shiny)
+library(MASS)
+library(tidyverse)
+library(rstan)
+library(ggpubr)
+library(fitdistrplus)
+library(nortest)
+library(fitur)
+library(actuar)
+library(moments)
+library(AID)
+library(FAdist)
+library(rmarkdown)
+library(tinytex)
+library(numDeriv)
+library(rgl)
+library(lmtest)
+library(pander)
+library(sae)
+library(zoo)
+library(lmtest) 
+library(forecast)
+library(fBasics) 
+options(scipen = 999,digits=3) B
+ b8<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem2.xlsx")
+ #b8$date
+ # 41426 41609 41791 41974 42156 42339 42522 42705 42887 43070 43252 43435 43617 43800 43983 44166 44348 44531 44713 44896
+ b8$date<-as.Date(b8$date,origin = "1899-12-30")
+ z<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem_trans.xlsx")
+ 
+ t<-1:20
+```
+
+
+
+### On se propose de simuler et de prédire le bilan semestriel simplifié suivant:
+
+
+```{r echo=FALSE}
+int<-data.frame()
+int<-z[,2:ncol(z)]
+cn4 <- c("juin_2013","dec_2013","juin_2014","dec_2014","juin_2015","dec_2015","juin_2016","dec_2016","juin_2017","dec_2017","juin_2018","dec_2018","juin_2019","dec_2019","juin_2020","dec_2020","juin_2021","dec_2021","juin_2022","dec_2022") 
+
+rn1 <- c("AC12: Caisse et avoirs auprès de la BCT, CCP et TGT + Créances sur les établissements bancaires et financiers",
+        "AC3: Créances sur la clientèle",
+        "AC45: Portefeuille-titres commercial et Portefeuille d'investissement",
+        "AC6: Valeurs immobilisées",
+        "AC7: Autres actifs",
+        "Total actifs",
+        "PA12: Banque Centrale et CCP et Dépôts et avoirs des établissements bancaires et financiers",
+        "PA3: Dépôts et avoirs de la clientèle",
+        "PA4: Emprunts et Ressources spéciales",
+        "PA5: Autres passifs",
+        "Total passifs",
+        "CP1: Capital",
+        "CP2: Réserves",
+        "CP4: Autres capitaux propres",
+        "CP56: Résultat de l’exercice et résultats reportés",
+        "Total capitaux propres",
+        "Total capitaux propres et passifs")
+
+rownames(int) <- rn1
+
+# knitr::kable(int, col.names = cn4, row.names = TRUE,caption = "Semestrial balance Sheet")
+pander(int)
+
+```
+
+### Évaluons la dépendance linéaire de certaines variables représentatives du bilan simplifié en fonction du temps (simple linear regression with respect to time).
+
+
+
+# AC12
+
+
+```{r}
+cor(as.numeric(b8$date),b8$ac1+b8$ac2, method = "pearson")
+#Also same as cor(b8$ac1,as.numeric(b8$date), method = "pearson") 
+cor(t,b8$ac1+b8$ac2, method = "pearson")
+# Pearson Correlation: Describes the statistical relationship between two variables.
+# The Pearson correlation coefficient, denoted as "r," ranges from -1 to 1:
+# Positive r (r > 0): Indicates a positive linear relationship, meaning that as one variable increases, the other tends to increase as well.
+# Negative r (r < 0): Indicates a negative linear relationship, meaning that as one variable increases, the other tends to decrease.
+# r = 0: Suggests no linear relationship between the variables.
+# Other possible correlation measuring methods: kendall,spearman
+```
+
+```{r}
+modac12<-lm(formula=b8$ac1+b8$ac2~b8$date,data=b8)
+modr12<-rlm(formula=b8$ac1+b8$ac2~b8$date,data=b8)
+qplot(b8$date,b8$ac1+b8$ac2, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("AC12") +ylab("Time") 
+summary(modac12)
+summary(modr12)
+
+# Intercept's p-value is not interesting
+# whereas slope p-value should be <0.05 to be significant
+# here, a significant p-value for time means that it will give us a reliable guess of AC12
+
+# The F-statistic is compared to an F-distribution with the specified degrees of freedom to calculate a p-value.
+# The p-value tells you the probability of observing an F-statistic as extreme as the one computed from your data, assuming that the null hypothesis is true.
+
+# If the p-value associated with the F-statistic is less than your chosen significance level (e.g., 0.05), you would reject the null hypothesis.
+# Rejecting the null hypothesis suggests that the model, as a whole, is statistically significant, and at least one coefficient (usually the coefficient of the predictor variable) is different from zero.)
+
+
+#Checking residuals
+plot(modac12)
+hist(modac12$residuals)
+shapiro.test(modac12$residuals)
+# H0:normal_data <0.05 reject H0
+jarqueberaTest(modac12$residuals)
+# H0:normal_data <0.05 reject H0 same as shapiro
+#dependency of residuals
+dwtest(modac12)
+#Null Hypothesis: Errors are uncorrelated
+#H0: Errors are uncorrelated <0.05 reject H0 there is evidence of autocorrelation in the residuals
+#boxcox transformation is worthless
+```
+
+
+```{r}
+#Calcul de l'erreur d'ajustement
+
+le12<-abs(modac12$fitted.values-(b8$ac1+b8$ac2))/(b8$ac1+b8$ac2)
+
+print(le12*100)
+print(mean(le12)*100)
+```
+
+
+### Conclusions:
+
+* Le coefficient de corrélation de Pearson est de l'ordre 0.477 (à quel point AC12 est liée de manière linéaire à la variable temporellle $\in[-1,1]$ ).
+
+* $R^2=0.228$: Seulement 22,8% de la variation de AC12 peut être expliquée par la variable temps.
+
+* Les résidus du modèle ne sont pas normalement distribué. De plus, ils présentent une autocorrélation (ils ne  sont pas indépendants).
+
+* Les transformations de normalisation des données (Boxcox) n'améliorent pas le modèle. 
+
+* La régression linéaire robuste MASS::rlm() donne presque les mêmes résultats.
+
+* L'ajustement linéaire de AC12 présente une erreur moyenne de 37.5%.
+
+
+
+
+# AC3
+
+
+```{r}
+cor(as.numeric(b8$date),b8$ac3, method = "pearson")
+```
+
+```{r}
+modac3<-lm(formula=b8$ac3~b8$date,data=b8)
+qplot(b8$date,b8$ac3, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("AC3") +ylab("Time") 
+summary(modac3)
+#Checking residuals
+plot(modac3)
+hist(modac3$residuals)
+shapiro.test(modac3$residuals)
+jarqueberaTest(modac3$residuals)
+#dependency of residuals
+dwtest(modac3)
+```
+
+
+```{r}
+#Calcul de l'erreur d'ajustement
+
+le3<-abs(modac3$fitted.values-b8$ac3)/(b8$ac3)
+
+print(le3*100)
+print(mean(le3)*100)
+```
+
+
+### Conclusions:
+
+* Le coefficient de corrélation de Pearson est de l'ordre 0.658.
+
+* $R^2=0.433$: 43,3% de la variation de AC3 peut être expliquée par la variable temps.
+
+* Les résidus du modèle ne sont pas normalement distribué. De plus, ils présentent une autocorrélation (ils ne  sont pas indépendants).
+
+* Les transformations de normalisation des données (Boxcox) n'améliorent pas le modèle. 
+
+* L'ajustement linéaire de AC3 présente une erreur moyenne de 3.24% (amélioration par rapport à AC12).
+
+
+
+# PA3
+
+
+```{r}
+cor(as.numeric(b8$date),b8$pa3, method = "pearson")
+```
+
+```{r}
+modpa3<-lm(formula=b8$pa3~b8$date,data=b8)
+qplot(b8$date,b8$pa3, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("PA3") +ylab("Time") 
+summary(modpa3)
+#Checking residuals
+plot(modpa3)
+hist(modpa3$residuals)
+shapiro.test(modpa3$residuals)
+jarqueberaTest(modpa3$residuals)
+#dependency of residuals
+dwtest(modpa3)
+```
+
+
+```{r}
+#Calcul de l'erreur d'ajustement
+
+lep3<-abs(modpa3$fitted.values-b8$pa3)/(b8$pa3)
+
+print(lep3*100)
+print(mean(lep3)*100)
+```
+
+
+### Conclusions:
+
+* Le coefficient de corrélation de Pearson est de l'ordre 0.859.
+
+* $R^2=0.738$: 73.8% de la variation de PA3 peut être expliquée par la variable temps.
+
+* Les résidus du modèle ne sont pas normalement distribué (la normalité est meilleure que AC3 et AC12). De plus, ils présentent une autocorrélation (ils ne  sont pas indépendants).
+
+* Les transformations de normalisation des données (Boxcox) n'améliorent pas le modèle. 
+
+* L'ajustement linéaire de PA3 présente une erreur moyenne de 4.07%.
+
+
+
+# TCP: Total des capitaux propres 
+
+
+```{r}
+cor(as.numeric(b8$date),b8$tcp, method = "pearson")
+```
+
+```{r}
+modtcp<-lm(formula=b8$tcp~b8$date,data=b8)
+qplot(b8$date,b8$tcp, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("Total des capitaux propres") +ylab("Time") 
+summary(modtcp)
+#Checking residuals
+plot(modtcp)
+hist(modtcp$residuals)
+shapiro.test(modtcp$residuals)
+jarqueberaTest(modtcp$residuals)
+#dependency of residuals
+dwtest(modtcp)
+```
+
+
+```{r}
+#Calcul de l'erreur d'ajustement
+
+letcp<-abs(modtcp$fitted.values-b8$tcp)/(b8$tcp)
+
+print(letcp*100)
+print(mean(letcp)*100)
+```
+
+
+### Conclusions:
+
+* Le coefficient de corrélation de Pearson est de l'ordre  0.986.
+
+* $R^2=0.972$: 97.2% de la variation de TCP peut être expliquée par la variable temps.
+
+* Les résidus du modèle  sont presque normalement distribué et ne présentent presque pas d'autocorrélation (presque indépendant).
+
+* L'ajustement linéaire de TCP présente une erreur moyenne de 4.09%, le modèle est significatif du point de vue statistique, il ajuste bien la variable TCP .
+
+
+
+# TB: Total bilan 
+
+
+```{r}
+cor(as.numeric(b8$date),b8$tb, method = "pearson")
+```
+
+```{r}
+modtb<-lm(formula=b8$tb~b8$date,data=b8)
+qplot(b8$date,b8$tb, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("Total bilan") +ylab("Time") 
+summary(modtb)
+#Checking residuals
+plot(modtb)
+hist(modtb$residuals)
+shapiro.test(modtb$residuals)
+jarqueberaTest(modtb$residuals)
+#dependency of residuals
+dwtest(modtb)
+```
+
+
+```{r}
+#Calcul de l'erreur d'ajustement
+
+letb<-abs(modtb$fitted.values-b8$tb)/(b8$tb)
+
+print(letb*100)
+print(mean(letb)*100)
+```
+
+
+### Conclusions:
+
+* Le coefficient de corrélation de Pearson est de l'ordre  0.969 (tb est très corrélé linéairement à la variable temps).
+
+* $R^2=0.94$: 94% de la variation de TB peut être expliquée par la variable temps.
+
+* Les résidus du modèle  sont presque normalement distribué et ne présentent presque pas d'autocorrélation (presque indépendant).
+
+* L'ajustement linéaire de TB présente une erreur moyenne de 1.95%, le modèle est significatif du point de vue statistique, il ajuste bien la variable TB.
+
+
+
+# AC45
+
+```{r}
+cor(as.numeric(b8$date),b8$ac4+b8$ac5, method = "pearson")
+modac45<-lm(formula=b8$ac4+b8$ac5~b8$date,data=b8)
+qplot(b8$date,b8$ac4+b8$ac5, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("AC45") +ylab("Time") 
+summary(modac45)
+leac45<-abs(modac45$fitted.values-(b8$ac4+b8$ac5))/(b8$ac4+b8$ac5)
+print(mean(leac45)*100)
+```
+
+
+# AC6
+
+
+```{r}
+cor(as.numeric(b8$date),b8$ac6, method = "pearson")
+modac6<-lm(formula=b8$ac6~b8$date,data=b8)
+qplot(b8$date,b8$ac6, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("ac6") +ylab("Time") 
+summary(modac6)
+leac6<-abs(modac6$fitted.values-b8$ac6)/(b8$ac6)
+print(mean(leac6)*100)
+```
+
+
+
+
+# AC7
+
+```{r}
+cor(as.numeric(b8$date),b8$ac7, method = "pearson")
+modac7<-lm(formula=b8$ac7~b8$date,data=b8)
+qplot(b8$date,b8$ac7, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("ac7") +ylab("Time") 
+summary(modac7)
+leac7<-abs(modac7$fitted.values-b8$ac7)/(b8$ac7)
+print(mean(leac7)*100)
+```
+# PA12
+
+```{r}
+cor(as.numeric(b8$date),b8$pa1+b8$pa2, method = "pearson")
+modpa12<-rlm(formula=b8$pa1+b8$pa2~b8$date,data=b8)
+qplot(b8$date,b8$pa1+b8$pa2, geom="point")+geom_smooth(method="rlm", se=FALSE)+xlab("PA12") +ylab("Time") 
+summary(modpa12)
+lepa12<-abs(modpa12$fitted.values-(b8$pa1+b8$pa2))/(b8$pa1+b8$pa2)
+print(mean(lepa12)*100)
+```
+# PA4
+
+```{r}
+cor(as.numeric(b8$date),b8$pa4, method = "pearson")
+modpa4<-lm(formula=b8$pa4~b8$date,data=b8)
+qplot(b8$date,b8$pa4, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("pa4") +ylab("Time") 
+summary(modpa4)
+lepa4<-abs(modpa4$fitted.values-b8$pa4)/(b8$pa4)
+print(mean(lepa4)*100)
+```
+
+
+
+
+
+# PA5
+
+```{r}
+cor(as.numeric(b8$date),b8$pa5, method = "pearson")
+modpa5<-lm(formula=b8$pa5~b8$date,data=b8)
+qplot(b8$date,b8$pa5, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("pa5") +ylab("Time") 
+summary(modpa5)
+lepa5<-abs(modpa5$fitted.values-b8$pa5)/(b8$pa5)
+print(mean(lepa5)*100)
+```
+
+# CP1
+
+```{r}
+cor(as.numeric(b8$date),b8$cp1, method = "pearson")
+modcp1<-lm(formula=b8$cp1~b8$date,data=b8)
+qplot(b8$date,b8$cp1, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("cp1") +ylab("Time") 
+summary(modcp1)
+lecp1<-abs(modcp1$fitted.values-b8$cp1)/(b8$cp1)
+print(mean(lecp1)*100)
+```
+
+# CP2
+
+```{r}
+cor(as.numeric(b8$date),b8$cp2, method = "pearson")
+modcp2<-lm(formula=b8$cp2~b8$date,data=b8)
+qplot(b8$date,b8$cp2, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("cp2") +ylab("Time") 
+summary(modcp2)
+lecp2<-abs(modcp2$fitted.values-b8$cp2)/(b8$cp2)
+print(mean(lecp2)*100)
+```
+
+
+
+# CP4
+
+```{r}
+cor(as.numeric(b8$date),b8$cp4, method = "pearson")
+modcp4<-lm(formula=b8$cp4~b8$date,data=b8)
+qplot(b8$date,b8$cp4, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("cp4") +ylab("Time") 
+summary(modcp4)
+lecp4<-abs(modcp4$fitted.values-b8$cp4)/(b8$cp4)
+print(mean(lecp4)*100)
+```
+
+
+# CP56
+
+```{r}
+cor(as.numeric(b8$date),b8$cp5+b8$cp6, method = "pearson")
+modcp56<-lm(formula=b8$cp5+b8$cp6~b8$date,data=b8)
+qplot(b8$date,b8$cp5+b8$cp6, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("cp56") +ylab("Time") 
+summary(modcp56)
+lecp56<-abs(modcp56$fitted.values-(b8$cp5+b8$cp6))/(b8$cp5+b8$cp6)
+print(mean(lecp56)*100)
+```
+
+<!-- # CP6 -->
+
+<!-- ```{r} -->
+<!-- cor(as.numeric(b8$date),b8$cp6, method = "pearson") -->
+<!-- modcp6<-lm(formula=b8$cp6~b8$date,data=b8) -->
+<!-- qplot(b8$date,b8$cp6, geom="point")+geom_smooth(method="lm", se=FALSE)+xlab("cp6") +ylab("Time")  -->
+<!-- summary(modcp6) -->
+<!-- lecp6<-abs(modcp6$fitted.values-b8$cp6)/(b8$cp6) -->
+<!-- print(mean(lecp6)*100) -->
+<!-- ``` -->
+
+# Bilan semestriel simulé
+
+```{r include=FALSE}
+
+fita13_1<-c(modac12$fitted.values[1],modac3$fitted.values[1],modac45$fitted.values[1],modac6$fitted.values[1],modac7$fitted.values[1])
+
+fitp13_1<-c(modpa12$fitted.values[1],modpa3$fitted.values[1],modpa4$fitted.values[1],modpa5$fitted.values[1])
+
+fitcp13_1<-c(modcp1$fitted.values[1],modcp2$fitted.values[1],modcp4$fitted.values[1],modcp56$fitted.values[1])
+
+
+fit13_1<-c(fita13_1,sum(fita13_1),fitp13_1,sum(fitp13_1),fitcp13_1,sum(fitcp13_1),sum(fitcp13_1)+sum(fitp13_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita13_2<-c(modac12$fitted.values[2],modac3$fitted.values[2],modac45$fitted.values[2],modac6$fitted.values[2],modac7$fitted.values[2])
+
+fitp13_2<-c(modpa12$fitted.values[2],modpa3$fitted.values[2],modpa4$fitted.values[2],modpa5$fitted.values[2])
+
+fitcp13_2<-c(modcp1$fitted.values[2],modcp2$fitted.values[2],modcp4$fitted.values[2],modcp56$fitted.values[2])
+
+
+fit13_2<-c(fita13_2,sum(fita13_2),fitp13_2,sum(fitp13_2),fitcp13_2,sum(fitcp13_2),sum(fitcp13_2)+sum(fitp13_2))
+
+```
+
+```{r include=FALSE}
+
+fita14_1<-c(modac12$fitted.values[3],modac3$fitted.values[3],modac45$fitted.values[3],modac6$fitted.values[3],modac7$fitted.values[3])
+
+fitp14_1<-c(modpa12$fitted.values[3],modpa3$fitted.values[3],modpa4$fitted.values[3],modpa5$fitted.values[3])
+
+fitcp14_1<-c(modcp1$fitted.values[3],modcp2$fitted.values[3],modcp4$fitted.values[3],modcp56$fitted.values[3])
+
+
+fit14_1<-c(fita14_1,sum(fita14_1),fitp14_1,sum(fitp14_1),fitcp14_1,sum(fitcp14_1),sum(fitcp14_1)+sum(fitp14_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita14_2<-c(modac12$fitted.values[4],modac3$fitted.values[4],modac45$fitted.values[4],modac6$fitted.values[4],modac7$fitted.values[4])
+
+fitp14_2<-c(modpa12$fitted.values[4],modpa3$fitted.values[4],modpa4$fitted.values[4],modpa5$fitted.values[4])
+
+fitcp14_2<-c(modcp1$fitted.values[4],modcp2$fitted.values[4],modcp4$fitted.values[4],modcp56$fitted.values[4])
+
+
+fit14_2<-c(fita14_2,sum(fita14_2),fitp14_2,sum(fitp14_2),fitcp14_2,sum(fitcp14_2),sum(fitcp14_2)+sum(fitp14_2))
+
+```
+
+```{r include=FALSE}
+
+fita15_1<-c(modac12$fitted.values[5],modac3$fitted.values[5],modac45$fitted.values[5],modac6$fitted.values[5],modac7$fitted.values[5])
+
+fitp15_1<-c(modpa12$fitted.values[5],modpa3$fitted.values[5],modpa4$fitted.values[5],modpa5$fitted.values[5])
+
+fitcp15_1<-c(modcp1$fitted.values[5],modcp2$fitted.values[5],modcp4$fitted.values[5],modcp56$fitted.values[5])
+
+
+fit15_1<-c(fita15_1,sum(fita15_1),fitp15_1,sum(fitp15_1),fitcp15_1,sum(fitcp15_1),sum(fitcp15_1)+sum(fitp15_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita15_2<-c(modac12$fitted.values[6],modac3$fitted.values[6],modac45$fitted.values[6],modac6$fitted.values[6],modac7$fitted.values[6])
+
+fitp15_2<-c(modpa12$fitted.values[6],modpa3$fitted.values[6],modpa4$fitted.values[6],modpa5$fitted.values[6])
+
+fitcp15_2<-c(modcp1$fitted.values[6],modcp2$fitted.values[6],modcp4$fitted.values[6],modcp56$fitted.values[6])
+
+
+fit15_2<-c(fita15_2,sum(fita15_2),fitp15_2,sum(fitp15_2),fitcp15_2,sum(fitcp15_2),sum(fitcp15_2)+sum(fitp15_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita16_1<-c(modac12$fitted.values[7],modac3$fitted.values[7],modac45$fitted.values[7],modac6$fitted.values[7],modac7$fitted.values[7])
+
+fitp16_1<-c(modpa12$fitted.values[7],modpa3$fitted.values[7],modpa4$fitted.values[7],modpa5$fitted.values[7])
+
+fitcp16_1<-c(modcp1$fitted.values[7],modcp2$fitted.values[7],modcp4$fitted.values[7],modcp56$fitted.values[7])
+
+
+fit16_1<-c(fita16_1,sum(fita16_1),fitp16_1,sum(fitp16_1),fitcp16_1,sum(fitcp16_1),sum(fitcp16_1)+sum(fitp16_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita16_2<-c(modac12$fitted.values[8],modac3$fitted.values[8],modac45$fitted.values[8],modac6$fitted.values[8],modac7$fitted.values[8])
+
+fitp16_2<-c(modpa12$fitted.values[8],modpa3$fitted.values[8],modpa4$fitted.values[8],modpa5$fitted.values[8])
+
+fitcp16_2<-c(modcp1$fitted.values[8],modcp2$fitted.values[8],modcp4$fitted.values[8],modcp56$fitted.values[8])
+
+
+fit16_2<-c(fita16_2,sum(fita16_2),fitp16_2,sum(fitp16_2),fitcp16_2,sum(fitcp16_2),sum(fitcp16_2)+sum(fitp16_2))
+
+```
+
+```{r include=FALSE}
+
+fita17_1<-c(modac12$fitted.values[9],modac3$fitted.values[9],modac45$fitted.values[9],modac6$fitted.values[9],modac7$fitted.values[9])
+
+fitp17_1<-c(modpa12$fitted.values[9],modpa3$fitted.values[9],modpa4$fitted.values[9],modpa5$fitted.values[9])
+
+fitcp17_1<-c(modcp1$fitted.values[9],modcp2$fitted.values[9],modcp4$fitted.values[9],modcp56$fitted.values[9])
+
+
+fit17_1<-c(fita17_1,sum(fita17_1),fitp17_1,sum(fitp17_1),fitcp17_1,sum(fitcp17_1),sum(fitcp17_1)+sum(fitp17_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita17_2<-c(modac12$fitted.values[10],modac3$fitted.values[10],modac45$fitted.values[10],modac6$fitted.values[10],modac7$fitted.values[10])
+
+fitp17_2<-c(modpa12$fitted.values[10],modpa3$fitted.values[10],modpa4$fitted.values[10],modpa5$fitted.values[10])
+
+fitcp17_2<-c(modcp1$fitted.values[10],modcp2$fitted.values[10],modcp4$fitted.values[10],modcp56$fitted.values[10])
+
+
+fit17_2<-c(fita17_2,sum(fita17_2),fitp17_2,sum(fitp17_2),fitcp17_2,sum(fitcp17_2),sum(fitcp17_2)+sum(fitp17_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita18_1<-c(modac12$fitted.values[11],modac3$fitted.values[11],modac45$fitted.values[11],modac6$fitted.values[11],modac7$fitted.values[11])
+
+fitp18_1<-c(modpa12$fitted.values[11],modpa3$fitted.values[11],modpa4$fitted.values[11],modpa5$fitted.values[11])
+
+fitcp18_1<-c(modcp1$fitted.values[11],modcp2$fitted.values[11],modcp4$fitted.values[11],modcp56$fitted.values[11])
+
+
+fit18_1<-c(fita18_1,sum(fita18_1),fitp18_1,sum(fitp18_1),fitcp18_1,sum(fitcp18_1),sum(fitcp18_1)+sum(fitp18_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita18_2<-c(modac12$fitted.values[12],modac3$fitted.values[12],modac45$fitted.values[12],modac6$fitted.values[12],modac7$fitted.values[12])
+
+fitp18_2<-c(modpa12$fitted.values[12],modpa3$fitted.values[12],modpa4$fitted.values[12],modpa5$fitted.values[12])
+
+fitcp18_2<-c(modcp1$fitted.values[12],modcp2$fitted.values[12],modcp4$fitted.values[12],modcp56$fitted.values[12])
+
+
+fit18_2<-c(fita18_2,sum(fita18_2),fitp18_2,sum(fitp18_2),fitcp18_2,sum(fitcp18_2),sum(fitcp18_2)+sum(fitp18_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita19_1<-c(modac12$fitted.values[13],modac3$fitted.values[13],modac45$fitted.values[13],modac6$fitted.values[13],modac7$fitted.values[13])
+
+fitp19_1<-c(modpa12$fitted.values[13],modpa3$fitted.values[13],modpa4$fitted.values[13],modpa5$fitted.values[13])
+
+fitcp19_1<-c(modcp1$fitted.values[13],modcp2$fitted.values[13],modcp4$fitted.values[13],modcp56$fitted.values[13])
+
+
+fit19_1<-c(fita19_1,sum(fita19_1),fitp19_1,sum(fitp19_1),fitcp19_1,sum(fitcp19_1),sum(fitcp19_1)+sum(fitp19_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita19_2<-c(modac12$fitted.values[14],modac3$fitted.values[14],modac45$fitted.values[14],modac6$fitted.values[14],modac7$fitted.values[14])
+
+fitp19_2<-c(modpa12$fitted.values[14],modpa3$fitted.values[14],modpa4$fitted.values[14],modpa5$fitted.values[14])
+
+fitcp19_2<-c(modcp1$fitted.values[14],modcp2$fitted.values[14],modcp4$fitted.values[14],modcp56$fitted.values[14])
+
+
+fit19_2<-c(fita19_2,sum(fita19_2),fitp19_2,sum(fitp19_2),fitcp19_2,sum(fitcp19_2),sum(fitcp19_2)+sum(fitp19_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita20_1<-c(modac12$fitted.values[15],modac3$fitted.values[15],modac45$fitted.values[15],modac6$fitted.values[15],modac7$fitted.values[15])
+
+fitp20_1<-c(modpa12$fitted.values[15],modpa3$fitted.values[15],modpa4$fitted.values[15],modpa5$fitted.values[15])
+
+fitcp20_1<-c(modcp1$fitted.values[15],modcp2$fitted.values[15],modcp4$fitted.values[15],modcp56$fitted.values[15])
+
+
+fit20_1<-c(fita20_1,sum(fita20_1),fitp20_1,sum(fitp20_1),fitcp20_1,sum(fitcp20_1),sum(fitcp20_1)+sum(fitp20_1))
+
+```
+
+```{r include=FALSE}
+
+fita20_2<-c(modac12$fitted.values[16],modac3$fitted.values[16],modac45$fitted.values[16],modac6$fitted.values[16],modac7$fitted.values[16])
+
+fitp20_2<-c(modpa12$fitted.values[16],modpa3$fitted.values[16],modpa4$fitted.values[16],modpa5$fitted.values[16])
+
+fitcp20_2<-c(modcp1$fitted.values[16],modcp2$fitted.values[16],modcp4$fitted.values[16],modcp56$fitted.values[16])
+
+
+fit20_2<-c(fita20_2,sum(fita20_2),fitp20_2,sum(fitp20_2),fitcp20_2,sum(fitcp20_2),sum(fitcp20_2)+sum(fitp20_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita21_1<-c(modac12$fitted.values[17],modac3$fitted.values[17],modac45$fitted.values[17],modac6$fitted.values[17],modac7$fitted.values[17])
+
+fitp21_1<-c(modpa12$fitted.values[17],modpa3$fitted.values[17],modpa4$fitted.values[17],modpa5$fitted.values[17])
+
+fitcp21_1<-c(modcp1$fitted.values[17],modcp2$fitted.values[17],modcp4$fitted.values[17],modcp56$fitted.values[17])
+
+
+fit21_1<-c(fita21_1,sum(fita21_1),fitp21_1,sum(fitp21_1),fitcp21_1,sum(fitcp21_1),sum(fitcp21_1)+sum(fitp21_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita21_2<-c(modac12$fitted.values[18],modac3$fitted.values[18],modac45$fitted.values[18],modac6$fitted.values[18],modac7$fitted.values[18])
+
+fitp21_2<-c(modpa12$fitted.values[18],modpa3$fitted.values[18],modpa4$fitted.values[18],modpa5$fitted.values[18])
+
+fitcp21_2<-c(modcp1$fitted.values[18],modcp2$fitted.values[18],modcp4$fitted.values[18],modcp56$fitted.values[18])
+
+
+fit21_2<-c(fita21_2,sum(fita21_2),fitp21_2,sum(fitp21_2),fitcp21_2,sum(fitcp21_2),sum(fitcp21_2)+sum(fitp21_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita22_1<-c(modac12$fitted.values[19],modac3$fitted.values[19],modac45$fitted.values[19],modac6$fitted.values[19],modac7$fitted.values[19])
+
+fitp22_1<-c(modpa12$fitted.values[19],modpa3$fitted.values[19],modpa4$fitted.values[19],modpa5$fitted.values[19])
+
+fitcp22_1<-c(modcp1$fitted.values[19],modcp2$fitted.values[19],modcp4$fitted.values[19],modcp56$fitted.values[19])
+
+
+fit22_1<-c(fita22_1,sum(fita22_1),fitp22_1,sum(fitp22_1),fitcp22_1,sum(fitcp22_1),sum(fitcp22_1)+sum(fitp22_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita22_2<-c(modac12$fitted.values[20],modac3$fitted.values[20],modac45$fitted.values[20],modac6$fitted.values[20],modac7$fitted.values[20])
+
+fitp22_2<-c(modpa12$fitted.values[20],modpa3$fitted.values[20],modpa4$fitted.values[20],modpa5$fitted.values[20])
+
+fitcp22_2<-c(modcp1$fitted.values[20],modcp2$fitted.values[20],modcp4$fitted.values[20],modcp56$fitted.values[20])
+
+
+fit22_2<-c(fita22_2,sum(fita22_2),fitp22_2,sum(fitp22_2),fitcp22_2,sum(fitcp22_2),sum(fitcp22_2)+sum(fitp22_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita23_1<-c(predict.lm(modac12)[1],predict.lm(modac3)[1],predict.lm(modac45)[1],predict.lm(modac6)[1],predict.lm(modac7)[1])
+
+fitp23_1<-c(predict.lm(modpa12)[1],predict.lm(modpa3)[1],predict.lm(modpa4)[1],predict.lm(modpa5)[1])
+
+fitcp23_1<-c(predict.lm(modcp1)[1],predict.lm(modcp2)[1],predict.lm(modcp4)[1],predict.lm(modcp56)[1])
+
+
+fit23_1<-c(fita23_1,sum(fita23_1),fitp23_1,sum(fitp23_1),fitcp23_1,sum(fitcp23_1),sum(fitcp23_1)+sum(fitp23_1))
+
+```
+
+
+
+
+```{r include=FALSE}
+
+fita23_2<-c(predict.lm(modac12)[2],predict.lm(modac3)[2],predict.lm(modac45)[2],predict.lm(modac6)[2],predict.lm(modac7)[2])
+
+fitp23_2<-c(predict.lm(modpa12)[2],predict.lm(modpa3)[2],predict.lm(modpa4)[2],predict.lm(modpa5)[2])
+
+fitcp23_2<-c(predict.lm(modcp1)[2],predict.lm(modcp2)[2],predict.lm(modcp4)[2],predict.lm(modcp56)[2])
+
+
+fit23_2<-c(fita23_2,sum(fita23_2),fitp23_2,sum(fitp23_2),fitcp23_2,sum(fitcp23_2),sum(fitcp23_2)+sum(fitp23_2))
+
+```
+
+
+
+
+```{r include=FALSE}
+
+fita24_1<-c(predict.lm(modac12)[3],predict.lm(modac3)[3],predict.lm(modac45)[3],predict.lm(modac6)[3],predict.lm(modac7)[3])
+
+fitp24_1<-c(predict.lm(modpa12)[3],predict.lm(modpa3)[3],predict.lm(modpa4)[3],predict.lm(modpa5)[3])
+
+fitcp24_1<-c(predict.lm(modcp1)[3],predict.lm(modcp2)[3],predict.lm(modcp4)[3],predict.lm(modcp56)[3])
+
+
+fit24_1<-c(fita24_1,sum(fita24_1),fitp23_2,sum(fitp24_1),fitcp24_1,sum(fitcp24_1),sum(fitcp24_1)+sum(fitp24_1))
+
+```
+
+
+
+
+```{r include=FALSE}
+
+fita24_2<-c(predict.lm(modac12)[4],predict.lm(modac3)[4],predict.lm(modac45)[4],predict.lm(modac6)[4],predict.lm(modac7)[4])
+
+fitp24_2<-c(predict.lm(modpa12)[4],predict.lm(modpa3)[4],predict.lm(modpa4)[4],predict.lm(modpa5)[4])
+
+fitcp24_2<-c(predict.lm(modcp1)[4],predict.lm(modcp2)[4],predict.lm(modcp4)[4],predict.lm(modcp56)[4])
+
+
+fit24_2<-c(fita24_2,sum(fita24_2),fitp24_2,sum(fitp24_2),fitcp24_2,sum(fitcp24_2),sum(fitcp24_2)+sum(fitp24_2))
+
+```
+
+
+
+
+```{r include=FALSE}
+
+fita25_1<-c(predict.lm(modac12)[5],predict.lm(modac3)[5],predict.lm(modac45)[5],predict.lm(modac6)[5],predict.lm(modac7)[5])
+
+fitp25_1<-c(predict.lm(modpa12)[5],predict.lm(modpa3)[5],predict.lm(modpa4)[5],predict.lm(modpa5)[5])
+
+fitcp25_1<-c(predict.lm(modcp1)[5],predict.lm(modcp2)[5],predict.lm(modcp4)[5],predict.lm(modcp56)[5])
+
+
+fit25_1<-c(fita25_1,sum(fita25_1),fitp25_1,sum(fitp25_1),fitcp25_1,sum(fitcp25_1),sum(fitcp25_1)+sum(fitp25_1))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita25_2<-c(predict.lm(modac12)[6],predict.lm(modac3)[6],predict.lm(modac45)[6],predict.lm(modac6)[6],predict.lm(modac7)[6])
+
+fitp25_2<-c(predict.lm(modpa12)[6],predict.lm(modpa3)[6],predict.lm(modpa4)[6],predict.lm(modpa5)[6])
+
+fitcp25_2<-c(predict.lm(modcp1)[6],predict.lm(modcp2)[6],predict.lm(modcp4)[6],predict.lm(modcp56)[6])
+
+
+fit25_2<-c(fita25_2,sum(fita25_2),fitp25_2,sum(fitp25_2),fitcp25_2,sum(fitcp25_2),sum(fitcp25_2)+sum(fitp25_2))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita26_1<-c(predict.lm(modac12)[7],predict.lm(modac3)[7],predict.lm(modac45)[7],predict.lm(modac6)[7],predict.lm(modac7)[7])
+
+fitp26_1<-c(predict.lm(modpa12)[7],predict.lm(modpa3)[7],predict.lm(modpa4)[7],predict.lm(modpa5)[7])
+
+fitcp26_1<-c(predict.lm(modcp1)[7],predict.lm(modcp2)[7],predict.lm(modcp4)[7],predict.lm(modcp56)[7])
+
+
+fit26_1<-c(fita26_1,sum(fita26_1),fitp26_1,sum(fitp26_1),fitcp26_1,sum(fitcp26_1),sum(fitcp26_1)+sum(fitp26_1))
+
+```
+
+
+
+
+```{r include=FALSE}
+
+fita26_2<-c(predict.lm(modac12)[8],predict.lm(modac3)[8],predict.lm(modac45)[8],predict.lm(modac6)[8],predict.lm(modac7)[8])
+
+fitp26_2<-c(predict.lm(modpa12)[8],predict.lm(modpa3)[8],predict.lm(modpa4)[8],predict.lm(modpa5)[8])
+
+fitcp26_2<-c(predict.lm(modcp1)[8],predict.lm(modcp2)[8],predict.lm(modcp4)[8],predict.lm(modcp56)[8])
+
+
+fit26_2<-c(fita26_2,sum(fita26_2),fitp26_2,sum(fitp26_2),fitcp26_2,sum(fitcp26_2),sum(fitcp26_2)+sum(fitp26_2))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita27_1<-c(predict.lm(modac12)[9],predict.lm(modac3)[9],predict.lm(modac45)[9],predict.lm(modac6)[9],predict.lm(modac7)[9])
+
+fitp27_1<-c(predict.lm(modpa12)[9],predict.lm(modpa3)[9],predict.lm(modpa4)[9],predict.lm(modpa5)[9])
+
+fitcp27_1<-c(predict.lm(modcp1)[9],predict.lm(modcp2)[9],predict.lm(modcp4)[9],predict.lm(modcp56)[9])
+
+
+fit27_1<-c(fita27_1,sum(fita27_1),fitp27_1,sum(fitp27_1),fitcp27_1,sum(fitcp27_1),sum(fitcp27_1)+sum(fitp27_1))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita27_2<-c(predict.lm(modac12)[10],predict.lm(modac3)[10],predict.lm(modac45)[10],predict.lm(modac6)[10],predict.lm(modac7)[10])
+
+fitp27_2<-c(predict.lm(modpa12)[10],predict.lm(modpa3)[10],predict.lm(modpa4)[10],predict.lm(modpa5)[10])
+
+fitcp27_2<-c(predict.lm(modcp1)[10],predict.lm(modcp2)[10],predict.lm(modcp4)[10],predict.lm(modcp56)[10])
+
+
+fit27_2<-c(fita27_2,sum(fita27_2),fitp27_2,sum(fitp27_2),fitcp27_2,sum(fitcp27_2),sum(fitcp27_2)+sum(fitp27_2))
+
+```
+
+
+```{r echo=FALSE}
+bssl<-cbind(z$juin_2013,fit13_1,z$dec_2013,fit13_2,z$juin_2014,fit14_1,z$dec_2014,fit14_2,z$juin_2015,fit15_1,z$dec_2015,fit15_2,z$juin_2016,fit16_1,z$dec_2016,fit16_2,z$juin_2017,fit17_1,z$dec_2017,fit17_2,z$juin_2018,fit18_1,z$dec_2018,fit18_2,z$juin_2019,fit19_1,z$dec_2019,fit19_2,z$juin_2020,fit20_1,z$dec_2020,fit20_2,z$juin_2021,fit21_1,z$dec_2021,fit21_2,z$juin_2022,fit22_1,z$dec_2022,fit22_2,fit23_1,fit23_2,fit24_1,fit24_1,fit25_1,fit25_2,fit26_1,fit26_2,fit27_1,fit27_2)
+cn3 <- c("juin_2013","juin_2013_fitted","dec_2013","dec_2013_fitted","juin_2014","juin_2014_fitted","dec_2014","dec_2014_fitted","juin_2015","juin_2015_fitted","dec_2015","dec_2015_fitted","juin_2016","juin_2016_fitted","dec_2016","dec_2016_fitted","juin_2017","juin_2017_fitted","dec_2017","dec_2017_fitted","juin_2018","juin_2018_fitted","dec_2018","dec_2018_fitted","juin_2019","juin-2019_fitted","dec_2019","dec-2019_fitted","juin_2020","juin_2020_fitted","dec_2020","dec_2020_fitted","juin_2021","juin_2021_fitted","dec_2021","dec_2021_fitted","juin_2022","juin_2022_fitted","dec_2022","dec_2022_fitted","juin_2023_forecast","dec_2023_forecast","juin_2024_forecast","dec_2024_forecast","juin_2025_forecast","dec_2025_forecast","juin_2026_forecast","dec_2026_forecast","juin_2027_forecast","dec_2027_forecast") 
+
+rn1 <- c("AC12: Caisse et avoirs auprès de la BCT, CCP et TGT + Créances sur les établissements bancaires et financiers",
+        "AC3: Créances sur la clientèle",
+        "AC45: Portefeuille-titres commercial et Portefeuille d'investissement",
+        "AC6: Valeurs immobilisées",
+        "AC7: Autres actifs",
+        "Total actifs",
+        "PA12: Banque Centrale et CCP et Dépôts et avoirs des établissements bancaires et financiers",
+        "PA3: Dépôts et avoirs de la clientèle",
+        "PA4: Emprunts et Ressources spéciales",
+        "PA5: Autres passifs",
+        "Total passifs",
+        "CP1: Capital",
+        "CP2: Réserves",
+        "CP4: Autres capitaux propres",
+        "CP56: Résultat de l’exercice et résultats reportés",
+        "Total capitaux propres",
+        "Total capitaux propres et passifs")
+
+rownames(bssl) <- rn1
+
+knitr::kable(bssl, col.names = cn3, row.names = TRUE,caption = "Semestrial balance Sheet Comparison: Actual, Fitted, and Predicted Values")
+pander(bssl) 
+
+```
+
+
+
+## Discussion
+
+```{r}
+error<-c()
+for (i in seq(from = 1, to = 39, by = 2)){
+    actual<-c(bssl[,i])
+    predicted<-c(bssl[,i+1])
+    relative_error <- abs(actual - predicted) / actual
+    error<-c(error,mean(relative_error))
+}
+print(error)
+mean(error)
+```
+
+#### Conclusion:
+
+* LM a permis de donner un ajustement du bilan avec une erreur moyenne de 10%.
+
+* La méthode rlm (robust linear modelling) qui est efficace lorsque des valeurs aberrantes (outliers) sont présentes dans les données, n'a pas amélioré l'erreur d'ajustement.
+
+* On veut bien explorer la regression multiple (lm et glm) ...

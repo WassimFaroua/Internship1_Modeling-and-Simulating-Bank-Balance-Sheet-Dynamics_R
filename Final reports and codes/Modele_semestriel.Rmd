@@ -1,0 +1,2742 @@
+---
+title: "Simulation du bilan de la banque"
+output: html_document
+date: "2023-08-23"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
+library(FinTS)
+library(stats)
+library(tidyverse)
+library(zoo)
+library(tseries)
+library(TTR)
+library(tseries)
+library(gridExtra)
+library(lmtest)
+library(strucchange)
+library(openxlsx)
+library(minqa)
+library(nloptr)
+library(pander)
+library(rugarch)
+library(KFAS)
+library(seastests)
+library(sae)
+library(urca)
+library(vars)
+library(tsDyn)
+options(scipen = 999,digits=3) 
+# b<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/Bilanc.xlsx")
+ b<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem.xlsx")
+ z<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem_trans.xlsx")
+#bsem<-rbind(b[1:3,],v,b[-(1:3),])
+#write.xlsx(b, "your_original_file.xlsx", rowNames = FALSE)
+ #x=ugarchspec(variance.model =list(garchOrder=c(1,1)),mean.model = list(armarOrder=c(0,0)))
+```
+
+
+
+# Semestrial data
+
+
+### On se propose de simuler et de prédire le bilan semestriel simplifié suivant:
+
+```{r echo=FALSE}
+int<-data.frame()
+int<-z[,2:ncol(z)]
+cn4 <- c("juin_2013","dec_2013","juin_2014","dec_2014","juin_2015","dec_2015","juin_2016","dec_2016","juin_2017","dec_2017","juin_2018","dec_2018","juin_2019","dec_2019","juin_2020","dec_2020","juin_2021","dec_2021","juin_2022","dec_2022") 
+
+rn1 <- c("AC12: Caisse et avoirs auprès de la BCT, CCP et TGT + Créances sur les établissements bancaires et financiers",
+        "AC3: Créances sur la clientèle",
+        "AC45: Portefeuille-titres commercial et Portefeuille d'investissement",
+        "AC6: Valeurs immobilisées",
+        "AC7: Autres actifs",
+        "Total actifs",
+        "PA12: Banque Centrale et CCP et Dépôts et avoirs des établissements bancaires et financiers",
+        "PA3: Dépôts et avoirs de la clientèle",
+        "PA4: Emprunts et Ressources spéciales",
+        "PA5: Autres passifs",
+        "Total passifs",
+        "CP1: Capital",
+        "CP2: Réserves",
+        "CP4: Autres capitaux propres",
+        "CP56: Résultat de l’exercice et résultats reportés",
+        "Total capitaux propres",
+        "Total capitaux propres et passifs")
+
+rownames(int) <- rn1
+
+# knitr::kable(int, col.names = cn4, row.names = TRUE,caption = "Semestrial balance Sheet")
+pander(int)
+
+```
+
+
+
+
+
+# AC3
+
+
+```{r}
+#####visualisation
+ts.ac3<-ts(rev(b$ac3),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.ac3)
+# plot(decompose(ts.ac3))
+# stl(ts.ac12,s.window="periodic")
+```
+
+* La variable AC3 est une variable cumulative: elle désigne un total cumulatif ou une accumulation de la valeur des créances sur la clientèle au fil du temps et ne présente donc pas un comportement saisonnier.
+
+* Les fonction de décompostion dans R (decompose() et STL()) arrrivent toujours à trouver une composante saisonnière pour n'importe quel type de séries temporelles contenant au moins deux périodes complètes de données via leurs algorithmes implémentés.
+
+* Généralement, on peut conclure quant au caractère saisonnier d'une série temporelle en se basant sur sa représentation graphique et ses corrélogrammes (ACF et PACF plots).
+
+* Le package seastests dans R contient plusieurs tests de saisonnalité des séries temporelles:
+
+  * La fonction isSeasonal(): retourne TRUE si la série présente un comportement saisonnier, FALSE sinon.
+  
+  * Le test combiné de saisonnalité de Ollech et Webel’s.
+   
+   * Le test de saisonnalité de Friedman.
+    
+
+#### Application de ces tests de saisonnalité sur la variable AC3:
+
+```{r}
+
+isSeasonal(ts.ac3) 
+
+combined_test(ts.ac3, 2)
+
+fried(ts.ac3, 2)
+```
+
+'By default, the WO-test combines the results of the QS-test and the kw-test, both calculated on the
+residuals of an automatic non-seasonal ARIMA model. If the p-value of the QS-test is below 0.01
+or the p-value of the kw-test is below 0.002, the WO-test will classify the corresponding time series
+as seasonal.' Source: "https://cran.r-project.org/web/packages/seastests/seastests.pdf".
+
+Les trois tests affirment l'absence de saisonnalité pour la variable AC3 (p-values> 0.01 et 0.002).
+
+#### L'augmentation du nombre de points résulte en l'apparition d'une autocorrélation dans la série de données.
+
+```{r include=FALSE}
+BoxCox.lambda(ts.ac3)
+y3<-BoxCox(ts.ac3,lambda = BoxCox.lambda(ts.ac3)) #bxcx(y, lambda, InverseQ=TRUE)
+autoplot(y3)
+```
+
+#### ETS 
+
+```{r echo=TRUE}
+fit3.ets<-ets(ts.ac3)
+# autoplot(fit3.ets)
+#summary(fit3.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.ets$fitted, color = "blue")
+forecast.ets(fit3.ets,h=10)
+#flat prediction
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fit3.holt<-holt(ts.ac3)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fit3.holt)
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fit3.hw<-hw(ts.ac3)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.ac3)
+pacf(ts.ac3)
+```
+
+```{r}
+fit3.arima<-auto.arima(ts.ac3)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.arima$fitted, color = "blue")
+forecast(fit3.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fit3.TBATS<-tbats(ts.ac3)
+autoplot(fit3.TBATS)
+summary(fit3.TBATS)
+checkresiduals(fit3.TBATS)
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.ac3, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fit3.ets$fitted, color = "red")+autolayer (fit3.arima$fitted, color = "blue")+autolayer(fit3.holt$fitted, color = "red")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fit3.ets,h=5)), autoplot(forecast(fit3.arima,h=5)),autoplot(forecast(fit3.holt,h=5)))
+```
+
+##### Corss-validation
+
+
+```{r}
+f3.ets <- function (y,h) forecast(fit3.ets,h=h)
+f3.arima <- function (y,h) forecast(fit3.arima,h=h)
+f3.holt<- function (y,h) forecast(fit3.holt,h=h)
+
+hmax<-5
+
+e3.ets<-na.omit(tsCV(ts.ac3,f3.ets,h=hmax))[,hmax]
+e3.arima<-na.omit(tsCV(ts.ac3,f3.arima,h=hmax))[,hmax]
+e3.holt<-na.omit(tsCV(ts.ac3,f3.holt,h=hmax))[,hmax]
+
+summary(data.frame(e3.ets^2,e3.arima^2,e3.holt^2))
+
+```
+
+#### On opte à priori pour la méthode ETS(M,A,N) (Best data capture)
+
+
+
+## Effet de l'agmentation du nombre de points:
+
+#### Graphiquement
+
+```{r}
+a<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/Bilanc.xlsx")
+t3<-ts(rev(a$ac3),start=2015,frequency=1)
+r<-holt(t3)
+
+grid.arrange(autoplot(t3, color = "white", lwd = 2) +
+   autolayer(r$fitted, color = "blue"),autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.ets$fitted, color = "blue"))
+
+```
+
+
+#### Calcul de l'erreur
+```{r}
+v3<-fit3.ets$fitted
+e3<-abs(v3-ts.ac3)/ts.ac3
+summary(e3)
+mean(e3)
+```
+
+
+#### On est passé d'une erreur de plus de 40% à une erreur moyenne de 2%, lorsqu'on a doublé le nombre de points l'erreur a diminué considérablement.
+
+```{r}
+
+comp<-data.frame()
+comp<-cbind(ts.ac3,v3)
+cn8 <- c("AC3","AC3_fitted")
+rn8 <- c("juin_2013","dec_2013","juin_2014","dec_2014","juin_2015","dec_2015","juin_2016","dec_2016","juin_2017","dec_2017","juin_2018","dec_2018","juin_2019","dec_2019","juin_2020","dec_2020","juin_2021","dec_2021","juin_2022","dec_2022")
+
+rownames(comp) <- rn8
+
+knitr::kable(comp, col.names = cn8, row.names = TRUE)
+
+```
+
+
+
+# PA3
+
+
+```{r}
+#####visualisation
+ts.pa3<-ts(rev(b$pa3),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.pa3)
+# plot(decompose(ts.pa3))
+```
+
+#### L'augmentation du nombre de points résulte en l'apparition d'une autocorrélation dans la série de données.
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitp3.ets<-ets(ts.pa3)
+# autoplot(fit3.ets)
+#summary(fit3.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.pa3, color = "white", lwd = 2) +
+   autolayer(fitp3.ets$fitted, color = "blue")
+forecast.ets(fitp3.ets,h=10)
+#flat prediction
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitp3.holt<-holt(ts.pa3)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitp3.holt)
+autoplot(ts.pa3, color = "white", lwd = 2) +
+   autolayer(fitp3.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitp3.hw<-hw(ts.pa3,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.pa3, color = "white", lwd = 2) +
+   autolayer(fitp3.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.pa3)
+pacf(ts.pa3)
+```
+
+```{r}
+fitp3.arima<-auto.arima(ts.pa3)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.pa3, color = "white", lwd = 2) +
+   autolayer(fitp3.arima$fitted, color = "blue")
+forecast(fitp3.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r eval=FALSE, include=FALSE}
+fit3.TBATS<-tbats(ts.ac3)
+autoplot(fit3.TBATS)
+summary(fit3.TBATS)
+checkresiduals(fit3.TBATS)
+autoplot(ts.ac3, color = "white", lwd = 2) +
+   autolayer(fit3.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.pa3, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitp3.ets$fitted, color = "red")+autolayer (fitp3.arima$fitted, color = "blue")+autolayer(fitp3.holt$fitted, color = "red")+autolayer (fitp3.hw$fitted, color = "blue")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitp3.ets,h=5)), autoplot(forecast(fitp3.arima,h=5)),autoplot(forecast(fitp3.holt,h=5)),autoplot(forecast(fitp3.hw,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fp3.ets <- function (y,h) forecast(fitp3.ets,h=h)
+fp3.arima <- function (y,h) forecast(fitp3.arima,h=h)
+fp3.holt<- function (y,h) forecast(fitp3.holt,h=h)
+fp3.hw<- function (y,h) forecast(fitp3.hw,h=h)
+
+hmax<-5
+
+ep3.ets<-na.omit(tsCV(ts.pa3,fp3.ets,h=hmax))[,hmax]
+ep3.arima<-na.omit(tsCV(ts.pa3,fp3.arima,h=hmax))[,hmax]
+ep3.holt<-na.omit(tsCV(ts.pa3,fp3.holt,h=hmax))[,hmax]
+ep3.hw<-na.omit(tsCV(ts.pa3,fp3.hw,h=hmax))[,hmax]
+
+summary(data.frame(ep3.ets^2,ep3.arima^2,ep3.holt^2,ep3.hw^2))
+
+```
+
+#### On opte à priori pour la méthode ETS(M,N,N) 
+
+
+
+## Effet de l'agmentation du nombre de points:
+
+#### Graphiquement
+
+```{r}
+a<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/Bilanc.xlsx")
+p3<-ts(rev(a$pa3),start=2015,frequency=1)
+r<-holt(p3)
+
+grid.arrange(autoplot(t3, color = "white", lwd = 2) +
+   autolayer(r$fitted, color = "blue"),autoplot(ts.pa3, color = "white", lwd = 2) +
+   autolayer(fitp3.ets$fitted, color = "blue"))
+
+```
+
+
+#### Calcul de l'erreur
+
+```{r}
+vp3<-fitp3.ets$fitted
+e3p<-abs(vp3-ts.pa3)/ts.pa3
+summary(e3p)
+mean(e3p)
+```
+
+
+#### On est passé d'une erreur de plus de 40% à une erreur moyenne de 3%, lorsqu'on a doublé le nombre de points l'erreur a diminué considérablement.
+
+```{r eval=FALSE, include=FALSE}
+
+comp1<-data.frame()
+comp1<-cbind(ts.pa3,vp3)
+cn8 <- c("PA3","PA3_fitted")
+rn8 <- c("juin_2013","dec_2013","juin_2014","dec_2014","juin_2015","dec_2015","juin_2016","dec_2016","juin_2017","dec_2017","juin_2018","dec_2018","juin_2019","dec_2019","juin_2020","dec_2020","juin_2021","dec_2021","juin_2022","dec_2022")
+
+rownames(comp1) <- rn8
+
+knitr::kable(comp, col.names = cn8, row.names = TRUE)
+
+```
+
+
+
+#### On a bien réussi à diminuer considérablement l'erreur en augmentant le nombre de points de 8 à 20
+
+#### On pourra augmenter d'avantage la taille des données en passant au bilan trimestriel: problème de missing values (multiple data imputation mice/amelia packages....)
+
+
+
+# AC12
+
+
+```{r}
+#####visualisation
+ts.ac12<-ts(rev(b$ac1+b$ac2),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.ac12)
+```
+#### ETS 
+
+```{r echo=TRUE}
+fitac12.ets<-ets(ts.ac12,lambda="auto")
+# autoplot(fit3.ets)
+summary(fitac12.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fitac12.ets$fitted, color = "blue")
+# forecast.ets(fitac12.ets,h=10)
+#flat prediction
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitac12.holt<-holt(ts.ac12,damped=TRUE,initial="simple",)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitac12.holt)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fitac12.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitac12.hw<-hw(ts.ac12,h=10)
+# autoplot(fit3.hw)
+#summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+forecast(fitac12.holt)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fitac12.hw$fitted, color = "blue")
+# flat predictions
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.ac12)
+pacf(ts.ac12)
+```
+
+```{r}
+fitac12.arima<-auto.arima(ts.ac12)
+# autoplot(fit3.arima)
+ summary(fitac12.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fitac12.arima$fitted, color = "blue")
+forecast(fitac12.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r}
+fitac12.TBATS<-tbats(ts.ac12)
+# autoplot(fit3.TBATS)
+# summary(fitac12.TBATS)
+# checkresiduals(fit3.TBATS)
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(fitac12.TBATS$fitted, color = "blue")
+# Gives flat predictions, no good
+```
+
+
+#### Calcul de l'erreur
+
+
+```{r}
+
+v12<-fitac12.arima$fitted
+er12<-abs(v12-ts.ac12)/ts.ac12
+summary(er12)
+mean(er12)
+
+```
+
+#### State Space methods (SSM): Kalman filter:
+
+```{r eval=FALSE, include=FALSE}
+# Q_quadratic <- list(matrix(0.1, ncol = 1, nrow = 1), matrix(0.1, ncol = 2, nrow = 2))  
+
+fitac12.kal<- SSModel(ts.ac12~ SSMtrend(degree = 1, Q =0.08), H = 0.01) #+SSMarima()
+x<-KFS(fitac12.kal)
+fitted(KFS(fitac12.kal))
+autoplot(ts.ac12, color = "white", lwd = 2) +
+   autolayer(x$muhat, color = "blue")
+```
+
+#### les méthodes classiques n'ont pa pas pu identifier avec précision le comportement de la variable AC12 (une erreur de 26%).
+
+#### La méthode du filtre de kalman (state space method) donne des résultats encourageants mais il faut encore maitriser cette technique et faire attention à l'overfitting qui résulte en des prédictions érronées (Would be useful in data imputations (missing values) for trimestrial balance sheet).
+
+
+
+#### Fiiting assuming structural changes:
+
+
+```{r eval=FALSE, include=FALSE}
+break_test <- breakpoints(ts.ac12 ~ 1)
+
+summary(break_test)
+
+
+breakpoints <- c(3, 11)
+
+
+segments <- split(ts.ac12, cut(1:length(ts.ac12), breaks = c(0, breakpoints, length(ts.ac12))))
+
+ff1<-ets(segments$`(0,3]`)
+segments$`(0,3]`
+ff1$fitted
+
+ff2<-ets(segments$`(3,11]`)
+segments$`(3,11]`
+ff2$fitted
+
+
+ff3<-holt(segments$`(11,20]`)
+segments$`(11,20]`
+ff3$fitted
+
+fitted_values <- c(ff1$fitted, ff2$fitted, ff3$fitted)
+
+print(cbind(fitted_values,ts.ac12))
+err=abs(fitted_values-ts.ac12)/ts.ac12
+mean(err)
+```
+##### La segmentation de AC12 a abouti à un ajustement présentant une erreur moyenne de 15%. no good!
+
+```{r}
+#### Model comparison
+autoplot(ts.ac12, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitac12.ets$fitted, color = "red")+autolayer (fitac12.arima$fitted, color = "blue")+autolayer(fitac12.holt$fitted, color = "red")+autolayer(fitac12.hw$fitted, color = "white")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitac12.ets,h=10)), autoplot(forecast(fitac12.arima,h=5)),autoplot(forecast(fitac12.holt,h=5)))
+```
+
+##### Corss-validation
+
+
+```{r}
+f12.ets <- function (y,h) forecast(fitac12.ets,h=h)
+f12.arima <- function (y,h) forecast(fitac12.arima,h=h)
+f12.holt<- function (y,h) forecast(fitac12.holt,h=h)
+f12.hw<- function (y,h) forecast(fitac12.holt,h=h)
+
+hmax<-5
+
+e12.ets<-na.omit(tsCV(ts.ac12,f12.ets,h=hmax))[,hmax]
+e12.arima<-na.omit(tsCV(ts.ac12,f12.arima,h=hmax))[,hmax]
+e12.holt<-na.omit(tsCV(ts.ac12,f12.holt,h=hmax))[,hmax]
+e12.hw<-na.omit(tsCV(ts.ac12,f12.hw,h=hmax))[,hmax]
+
+summary(data.frame(e12.ets^2,e12.arima^2,e12.holt^2,e12.hw^2))
+
+```
+
+
+
+#### On opte pour la méthode ARIMA(0,1,0)
+
+#### BSTS pour AC12 :
+
+```{r}
+library(bsts) # Bayesian Structural Time Series: Time series regression using dynamic linear models fit using MCMC
+library(rstan)
+
+phi1_prior <- rnorm(0, 20)
+ss<- AddAr(
+  state.specification = list(phi1 = phi1_prior),lags=1,
+  y = ts.ac12,
+  sigma.prior = rexp(1) #Cauchy(1,0)
+)
+# arima_state <- AddAr(list(order = arima_order), y = ts.ac45)
+ss<- AddLocalLinearTrend(list(), y = ts.ac12)
+
+fitac12.stan<- bsts(ts.ac12,state.specification = ss, niter=500)
+predac12<- predict(fitac12.stan, horizon =10 , burn = 100)
+
+# plot(pred)
+# plot(forecast(fitac45.hw))
+ts.predac12<-ts(predac12$mean,start=c(2023, 1),frequency=2)
+autoplot(ts.predac12, color = "black") + autolayer(fitac12.hw$mean, color = "red")+
+  labs(title = "STAN predictions vs. HW predictions")
+
+```
+
+
+# AC45
+
+
+```{r}
+#####visualisation
+ts.ac45<-ts(rev(b$ac4+b$ac5),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.ac45)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r}
+fitac45.ets<-ets(ts.ac45,lambda = TRUE)
+# autoplot(fit3.ets)
+summary(fit3.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fitac45.ets$fitted, color = "blue")
+forecast.ets(fitac45.ets,h=10)
+#flat prediction
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitac45.holt<-holt(ts.ac45)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+ summary(fitac45.holt)
+# checkresiduals(fit12.holt)
+forecast(fitac45.holt)
+autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fitac45.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitac45.hw<-hw(ts.ac45,h=10)
+# autoplot(fit3.hw)
+summary(fitac45.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fitac45.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.ac45)
+pacf(ts.ac45)
+```
+
+```{r}
+fitac45.arima<-auto.arima(ts.ac45)
+# autoplot(fit3.arima)
+summary(fitac45.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fitac45.arima$fitted, color = "blue")
+forecast(fitac45.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r eval=FALSE, include=FALSE}
+fitac45.TBATS<-tbats(ts.ac45)
+autoplot(fitac45.TBATS)
+summary(fitac45.TBATS)
+checkresiduals(fitac45.TBATS)
+autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fitac45.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.ac45, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitac45.ets$fitted, color = "red")+autolayer (fitac45.arima$fitted, color = "blue")+autolayer(fitac45.holt$fitted, color = "red")+autolayer (fitac45.hw$fitted, color = "blue")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitac45.ets,h=5)), autoplot(forecast(fitac45.arima,h=5)),autoplot(forecast(fitac45.holt,h=5)),autoplot(forecast(fitac45.hw,h=5)))
+```
+
+##### Cross-validation
+
+
+```{r}
+fac45.ets <- function (y,h) forecast(fitac45.ets,h=h)
+fac45.arima <- function (y,h) forecast(fitac45.arima,h=h)
+fac45.holt<- function (y,h) forecast(fitac45.holt,h=h)
+fac45.hw<- function (y,h) forecast(fitac45.hw,h=h)
+
+hmax<-5
+
+eac45.ets<-na.omit(tsCV(ts.pa3,fac45.ets,h=hmax))[,hmax]
+eac45.arima<-na.omit(tsCV(ts.pa3,fac45.arima,h=hmax))[,hmax]
+eac45.holt<-na.omit(tsCV(ts.pa3,fac45.holt,h=hmax))[,hmax]
+eac45.hw<-na.omit(tsCV(ts.pa3,fac45.hw,h=hmax))[,hmax]
+
+summary(data.frame(eac45.ets^2,eac45.arima^2,eac45.holt^2,eac45.hw^2))
+
+```
+
+#### On opte à priori pour la méthode de Holt-Winters. 
+
+
+
+## Effet de l'agmentation du nombre de points:
+
+#### Graphiquement
+
+```{r}
+a<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/Bilanc.xlsx")
+a45<-ts(rev(a$ac4+a$ac5),start=2015,frequency=1)
+r<-ets(a45)
+
+grid.arrange(autoplot(a45, color = "white", lwd = 2) +
+   autolayer(r$fitted, color = "blue"),autoplot(ts.ac45, color = "white", lwd = 2) +
+   autolayer(fitac45.hw$fitted, color = "blue"))
+
+```
+
+
+#### Calcul de l'erreur
+```{r}
+v45<-fitac45.arima$fitted
+e45a<-abs(v45-ts.ac45)/ts.ac45
+summary(e45a)
+mean(e45a)
+```
+##### Le modèle ajuste les données avec une erreur de 4%.
+
+```{r eval=FALSE, include=FALSE}
+
+comp2<-data.frame()
+comp2<-cbind(ts.ac45,v45)
+cn10 <- c("AC45","AC45_fitted")
+rn8 <- c("juin_2013","dec_2013","juin_2014","dec_2014","juin_2015","dec_2015","juin_2016","dec_2016","juin_2017","dec_2017","juin_2018","dec_2018","juin_2019","dec_2019","juin_2020","dec_2020","juin_2021","dec_2021","juin_2022","dec_2022")
+
+rownames(comp2) <- rn8
+
+knitr::kable(comp, col.names = cn10, row.names = TRUE)
+
+```
+
+#### BSTS pour AC45 :
+
+```{r}
+library(bsts) # Bayesian Structural Time Series: Time series regression using dynamic linear models fit using MCMC
+library(rstan)
+
+phi1_prior <- rnorm(0, 20)
+ss<- AddAr(
+  state.specification = list(phi1 = phi1_prior),lags=1,
+  y = ts.ac45,
+  sigma.prior = rexp(1) #Cauchy(1,0)
+)
+# arima_state <- AddAr(list(order = arima_order), y = ts.ac45)
+ss<- AddLocalLinearTrend(list(), y = ts.ac45)
+
+fitac45.stan<- bsts(ts.ac45,state.specification = ss, niter=500)
+predac45<- predict(fitac45.stan, horizon =10 , burn = 100)
+
+# plot(pred)
+# plot(forecast(fitac45.hw))
+ts.predac45<-ts(predac45$mean,start=c(2023, 1),frequency=2)
+autoplot(ts.predac45, color = "black") + autolayer(fitac45.hw$mean, color = "red")+
+  labs(title = "STAN predictions vs. HW predictions")
+
+```
+
+
+#### STAN method overestimates AC45 values.
+
+### On opte pour un ajustement ARIMA(0,1,0), les prévisions pour cette variable sont faites par une approche bayésienne.
+
+
+# AC6
+
+```{r}
+#####visualisation
+ts.ac6<-ts(rev(b$ac6),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.ac6)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitac6.ets<-ets(ts.ac6)
+# autoplot(fit3.ets)
+#summary(fit3.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.ac6, color = "white", lwd = 2) +
+   autolayer(fitac6.ets$fitted, color = "blue")
+forecast.ets(fitac6.ets,h=10)
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitac6.holt<-holt(ts.ac6)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitac6.holt)
+autoplot(ts.ac6, color = "white", lwd = 2) +
+   autolayer(fitac6.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitac6.hw<-hw(ts.ac6,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.ac6, color = "white", lwd = 2) +
+   autolayer(fitac6.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.ac6)
+pacf(ts.ac6)
+```
+
+```{r}
+fitac6.arima<-auto.arima(ts.ac6)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.ac6, color = "white", lwd = 2) +
+   autolayer(fitac6.arima$fitted, color = "blue")
+forecast(fitac6.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fitac6.TBATS<-tbats(ts.ac6)
+autoplot(fitac6.TBATS)
+summary(fitac6.TBATS)
+checkresiduals(fitac6.TBATS)
+autoplot(ts.ac6, color = "white", lwd = 2) +
+   autolayer(fitac6.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.ac6, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitac6.ets$fitted, color = "red")+autolayer (fitac6.arima$fitted, color = "blue")+autolayer(fitac6.holt$fitted, color = "white")+autolayer (fitac6.hw$fitted, color = "yellow")+autolayer (fitac6.TBATS$fitted, color = "green")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitac6.ets,h=5)), autoplot(forecast(fitac6.arima,h=5)),autoplot(forecast(fitac6.holt,h=5)),autoplot(forecast(fitac6.hw,h=5)),autoplot(forecast(fitac6.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fac6.ets <- function (y,h) forecast(fitac6.ets,h=h)
+fac6.arima <- function (y,h) forecast(fitac6.arima,h=h)
+fac6.holt<- function (y,h) forecast(fitac6.holt,h=h)
+fac6.hw<- function (y,h) forecast(fitac6.hw,h=h)
+fac6.TBATS<- function (y,h) forecast(fitac6.TBATS,h=h)
+
+hmax<-5
+
+eac6.ets<-na.omit(tsCV(ts.ac6,fac6.ets,h=hmax))[,hmax]
+eac6.arima<-na.omit(tsCV(ts.ac6,fac6.arima,h=hmax))[,hmax]
+eac6.holt<-na.omit(tsCV(ts.ac6,fac6.holt,h=hmax))[,hmax]
+eac6.hw<-na.omit(tsCV(ts.ac6,fac6.hw,h=hmax))[,hmax]
+eac6.TBATS<-na.omit(tsCV(ts.ac6,fac6.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(eac6.ets^2,eac6.arima^2,eac6.holt^2,eac6.hw^2,eac6.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vac6<-fitac6.hw$fitted
+eac6<-abs(vac6-ts.ac6)/ts.ac6
+summary(eac6)
+mean(eac6)
+```
+
+
+#### On opte à priori pour la méthode de Holt-Winters
+
+
+# AC7
+
+```{r}
+#####visualisation
+ts.ac7<-ts(rev(b$ac7),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.ac7)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitac7.ets<-ets(ts.ac7)
+# autoplot(fit3.ets)
+#summary(fit3.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.ac7, color = "white", lwd = 2) +
+   autolayer(fitac7.ets$fitted, color = "blue")
+forecast.ets(fitac7.ets,h=10)
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitac7.holt<-holt(ts.ac7)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitac7.holt)
+autoplot(ts.ac7, color = "white", lwd = 2) +
+   autolayer(fitac7.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitac7.hw<-hw(ts.ac7,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.ac7, color = "white", lwd = 2) +
+   autolayer(fitac7.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.ac7)
+pacf(ts.ac7)
+```
+
+```{r}
+fitac7.arima<-auto.arima(ts.ac7)
+# autoplot(fit3.arima)
+ summary(fitac7.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.ac7, color = "white", lwd = 2) +
+   autolayer(fitac7.arima$fitted, color = "blue")
+forecast(fitac7.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fitac7.TBATS<-tbats(ts.ac7)
+autoplot(fitac7.TBATS)
+summary(fitac7.TBATS)
+checkresiduals(fitac7.TBATS)
+autoplot(ts.ac7, color = "white", lwd = 2) +
+   autolayer(fitac7.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.ac7, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitac7.ets$fitted, color = "red")+autolayer (fitac7.arima$fitted, color = "blue")+autolayer(fitac7.holt$fitted, color = "white")+autolayer (fitac7.hw$fitted, color = "yellow")+autolayer (fitac7.TBATS$fitted, color = "green")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitac7.ets,h=5)), autoplot(forecast(fitac7.arima,h=5)),autoplot(forecast(fitac7.holt,h=5)),autoplot(forecast(fitac7.hw,h=5)),autoplot(forecast(fitac7.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fac7.ets <- function (y,h) forecast(fitac7.ets,h=h)
+fac7.arima <- function (y,h) forecast(fitac7.arima,h=h)
+fac7.holt<- function (y,h) forecast(fitac7.holt,h=h)
+fac7.hw<- function (y,h) forecast(fitac7.hw,h=h)
+fac7.TBATS<- function (y,h) forecast(fitac7.TBATS,h=h)
+
+hmax<-5
+
+eac7.ets<-na.omit(tsCV(ts.ac7,fac7.ets,h=hmax))[,hmax]
+eac7.arima<-na.omit(tsCV(ts.ac7,fac7.arima,h=hmax))[,hmax]
+eac7.holt<-na.omit(tsCV(ts.ac7,fac7.holt,h=hmax))[,hmax]
+eac7.hw<-na.omit(tsCV(ts.ac7,fac7.hw,h=hmax))[,hmax]
+eac7.TBATS<-na.omit(tsCV(ts.ac7,fac7.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(eac7.ets^2,eac7.arima^2,eac7.holt^2,eac7.hw^2,eac7.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vac7<-fitac7.arima$fitted
+eac7<-abs(vac7-ts.ac7)/ts.ac7
+summary(eac7)
+mean(eac7)
+```
+
+
+#### BSTS pour AC7 :
+
+```{r}
+library(bsts) # Bayesian Structural Time Series: Time series regression using dynamic linear models fit using MCMC
+library(rstan)
+
+phi1_prior <- rnorm(0, 20)
+ss<- AddAr(
+  state.specification = list(phi1 = phi1_prior),lags=1,
+  y = ts.ac6,
+  sigma.prior = rexp(1) #Cauchy(1,0)
+)
+# arima_state <- AddAr(list(order = arima_order), y = ts.ac45)
+ss<- AddLocalLinearTrend(list(), y = ts.ac6)
+
+fitac6.stan<- bsts(ts.ac6,state.specification = ss, niter=500)
+predac6 <- predict(fitac6.stan, horizon =10 , burn = 100)
+
+# plot(pred)
+# plot(forecast(fitac45.hw))
+ts.predac6<-ts(predac6$mean,start=c(2023, 1),frequency=2)
+
+
+```
+
+
+#### On opte à priori pour la méthode ARIMA(0,1,0),les prévisions pour cette variable sont faites par une approche bayésienne.
+
+
+
+
+# PA12
+
+```{r}
+#####visualisation
+ts.pa12<-ts(rev(b$pa1+b$pa2),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.pa12)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitpa12.ets<-ets(ts.pa12)
+# autoplot(fit3.ets)
+summary(fitpa12.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.pa12, color = "white", lwd = 2) +
+   autolayer(fitpa12.ets$fitted, color = "blue")
+forecast.ets(fitpa12.ets,h=10)
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitpa12.holt<-holt(ts.pa12)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitpa12.holt)
+autoplot(ts.pa12, color = "white", lwd = 2) +
+   autolayer(fitpa12.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitpa12.hw<-hw(ts.pa12,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.pa12, color = "white", lwd = 2) +
+   autolayer(fitpa12.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.pa12)
+pacf(ts.pa12)
+```
+
+```{r}
+fitpa12.arima<-auto.arima(ts.pa12)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.pa12, color = "white", lwd = 2) +
+   autolayer(fitpa12.arima$fitted, color = "blue")
+forecast(fitpa12.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fitpa12.TBATS<-tbats(ts.pa12)
+autoplot(fitpa12.TBATS)
+summary(fitpa12.TBATS)
+checkresiduals(fitpa12.TBATS)
+autoplot(ts.pa12, color = "white", lwd = 2) +
+   autolayer(fitpa12.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.pa12, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitpa12.ets$fitted, color = "red")+autolayer (fitpa12.arima$fitted, color = "blue")+autolayer(fitpa12.holt$fitted, color = "white")+autolayer (fitpa12.hw$fitted, color = "yellow")+autolayer (fitpa12.TBATS$fitted, color = "green")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitpa12.ets,h=5)), autoplot(forecast(fitpa12.arima,h=5)),autoplot(forecast(fitpa12.holt,h=5)),autoplot(forecast(fitpa12.hw,h=5)),autoplot(forecast(fitpa12.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fpa12.ets <- function (y,h) forecast(fitpa12.ets,h=h)
+fpa12.arima <- function (y,h) forecast(fitpa12.arima,h=h)
+fpa12.holt<- function (y,h) forecast(fitpa12.holt,h=h)
+fpa12.hw<- function (y,h) forecast(fitpa12.hw,h=h)
+fpa12.TBATS<- function (y,h) forecast(fitpa12.TBATS,h=h)
+
+hmax<-5
+
+epa12.ets<-na.omit(tsCV(ts.pa12,fpa12.ets,h=hmax))[,hmax]
+epa12.arima<-na.omit(tsCV(ts.pa12,fpa12.arima,h=hmax))[,hmax]
+epa12.holt<-na.omit(tsCV(ts.pa12,fpa12.holt,h=hmax))[,hmax]
+epa12.hw<-na.omit(tsCV(ts.pa12,fpa12.hw,h=hmax))[,hmax]
+epa12.TBATS<-na.omit(tsCV(ts.pa12,fpa12.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(epa12.ets^2,epa12.arima^2,epa12.holt^2,epa12.hw^2,epa12.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vpa12<-fitpa12.ets$fitted
+epa12<-abs(vpa12-ts.pa12)/ts.pa12
+summary(epa12)
+mean(epa12)
+```
+
+
+
+#### BSTS pour PA12 :
+
+```{r}
+library(bsts) # Bayesian Structural Time Series: Time series regression using dynamic linear models fit using MCMC
+library(rstan)
+
+phi1_prior <- rnorm(0, 20)
+ss<- AddAr(
+  state.specification = list(phi1 = phi1_prior),lags=1,
+  y = ts.pa12,
+  sigma.prior = rexp(1) #Cauchy(1,0)
+)
+# arima_state <- AddAr(list(order = arima_order), y = ts.ac45)
+ss<- AddLocalLinearTrend(list(), y = ts.pa12)
+
+fitpa12.stan<- bsts(ts.pa12,state.specification = ss, niter=500)
+predpa12 <- predict(fitpa12.stan, horizon =10 , burn = 100)
+
+# plot(pred)
+# plot(forecast(fitac45.hw))
+ts.predpa12<-ts(predpa12$mean,start=c(2023, 1),frequency=2)
+
+
+```
+
+
+#### On opte à priori pour la méthode ETS(A,N,N), les prévisions pour cette variable sont faites par une approche bayésienne.
+
+
+# PA4
+
+```{r}
+#####visualisation
+ts.pa4<-ts(rev(b$pa4),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.pa4)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r include=FALSE}
+fitpa4.ets<-ets(ts.pa4)
+# autoplot(fit3.ets)
+summary(fitpa4.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.pa4, color = "white", lwd = 2) +
+   autolayer(fitpa4.ets$fitted, color = "blue")
+forecast.ets(fitpa4.ets,h=10)
+#flat!
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitpa4.holt<-holt(ts.pa4)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitpa4.holt)
+autoplot(ts.pa4, color = "white", lwd = 2) +
+   autolayer(fitpa4.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitpa4.hw<-hw(ts.pa4,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.pa4, color = "white", lwd = 2) +
+   autolayer(fitpa4.hw$fitted, color = "blue")
+forecast(fitpa4.hw)
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.pa4)
+pacf(ts.pa4)
+```
+
+```{r}
+fitpa4.arima<-auto.arima(ts.pa4)
+# autoplot(fit3.arima)
+summary(fitpa4.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.pa4, color = "white", lwd = 2) +
+   autolayer(fitpa4.arima$fitted, color = "blue")
+forecast(fitpa4.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r include=FALSE}
+fitpa4.TBATS<-tbats(ts.pa4)
+autoplot(fitpa4.TBATS)
+summary(fitpa4.TBATS)
+checkresiduals(fitpa4.TBATS)
+autoplot(ts.pa4, color = "white", lwd = 2) +
+   autolayer(fitpa4.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.pa4, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer (fitpa4.arima$fitted, color = "blue")+autolayer(fitpa4.holt$fitted, color = "white")+autolayer (fitpa4.hw$fitted, color = "green")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitpa4.ets,h=5)), autoplot(forecast(fitpa4.arima,h=5)),autoplot(forecast(fitpa4.holt,h=5)),autoplot(forecast(fitpa4.hw,h=5)),autoplot(forecast(fitpa4.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fpa4.ets <- function (y,h) forecast(fitpa4.ets,h=h)
+fpa4.arima <- function (y,h) forecast(fitpa4.arima,h=h)
+fpa4.holt<- function (y,h) forecast(fitpa4.holt,h=h)
+fpa4.hw<- function (y,h) forecast(fitpa4.hw,h=h)
+fpa4.TBATS<- function (y,h) forecast(fitpa4.TBATS,h=h)
+
+hmax<-5
+
+epa4.ets<-na.omit(tsCV(ts.pa4,fpa4.ets,h=hmax))[,hmax]
+epa4.arima<-na.omit(tsCV(ts.pa4,fpa4.arima,h=hmax))[,hmax]
+epa4.holt<-na.omit(tsCV(ts.pa4,fpa4.holt,h=hmax))[,hmax]
+epa4.hw<-na.omit(tsCV(ts.pa4,fpa4.hw,h=hmax))[,hmax]
+epa4.TBATS<-na.omit(tsCV(ts.pa4,fpa4.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(epa4.ets^2,epa4.arima^2,epa4.holt^2,epa4.hw^2,epa4.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vpa4<-fitpa4.arima$fitted
+epa4<-abs(vpa4-ts.pa4)/ts.pa4
+summary(epa4)
+mean(epa4)
+```
+
+
+#### On opte pour la méthode ARIMA(1,0,0).
+
+
+# PA5
+
+```{r}
+#####visualisation
+ts.pa5<-ts(rev(b$pa5),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.pa5)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitpa5.ets<-ets(ts.pa5,alpha=0.38)
+# autoplot(fit3.ets)
+summary(fitpa5.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.pa5, color = "white", lwd = 2) +
+   autolayer(fitpa5.ets$fitted, color = "blue")
+forecast.ets(fitpa5.ets,h=10)
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitpa5.holt<-holt(ts.pa5,alpha = 0.32,beta=0.01)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitpa5.holt)
+autoplot(ts.pa5, color = "white", lwd = 2) +
+   autolayer(fitpa5.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitpa5.hw<-hw(ts.pa5,h=10,alpha=0.101,beta=0.10,gamma=0.1)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw)
+forecast(fitpa5.hw)
+autoplot(ts.pa5, color = "white", lwd = 2) +
+   autolayer(fitpa5.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.pa5)
+pacf(ts.pa5)
+```
+
+```{r include=FALSE}
+fitpa5.arima<-auto.arima(ts.pa5)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.pa5, color = "white", lwd = 2) +
+   autolayer(fitpa5.arima$fitted, color = "blue")
+forecast(fitpa5.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fitpa5.TBATS<-tbats(ts.pa5)
+autoplot(fitpa5.TBATS)
+summary(fitpa5.TBATS)
+checkresiduals(fitpa5.TBATS)
+autoplot(ts.pa5, color = "white", lwd = 2) +
+   autolayer(fitpa5.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.pa5, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitpa5.ets$fitted, color = "red")+autolayer(fitpa5.holt$fitted, color = "yellow")+autolayer (fitpa5.hw$fitted, color = "grey")+autolayer (fitpa5.TBATS$fitted, color = "pink")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitpa5.ets,h=5)), autoplot(forecast(fitpa5.arima,h=5)),autoplot(forecast(fitpa5.holt,h=5)),autoplot(forecast(fitpa5.hw,h=5)),autoplot(forecast(fitpa5.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fpa5.ets <- function (y,h) forecast(fitpa5.ets,h=h)
+fpa5.arima <- function (y,h) forecast(fitpa5.arima,h=h)
+fpa5.holt<- function (y,h) forecast(fitpa5.holt,h=h)
+fpa5.hw<- function (y,h) forecast(fitpa5.hw,h=h)
+fpa5.TBATS<- function (y,h) forecast(fitpa5.TBATS,h=h)
+
+hmax<-5
+
+epa5.ets<-na.omit(tsCV(ts.pa5,fpa5.ets,h=hmax))[,hmax]
+epa5.arima<-na.omit(tsCV(ts.pa5,fpa5.arima,h=hmax))[,hmax]
+epa5.holt<-na.omit(tsCV(ts.pa5,fpa5.holt,h=hmax))[,hmax]
+epa5.hw<-na.omit(tsCV(ts.pa5,fpa5.hw,h=hmax))[,hmax]
+epa5.TBATS<-na.omit(tsCV(ts.pa5,fpa5.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(epa5.ets^2,epa5.arima^2,epa5.holt^2,epa5.hw^2,epa5.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vpa5<-fitpa5.ets$fitted
+epa5<-abs(vpa5-ts.pa5)/ts.pa5
+summary(epa5)
+mean(epa5)
+```
+
+
+#### On opte pour la méthode ETS(A,N,N) .
+
+
+
+# CP1
+
+```{r}
+#####visualisation
+ts.cp1<-ts(rev(b$cp1),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.cp1)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitcp1.ets<-ets(ts.cp1)
+# autoplot(fit3.ets)
+summary(fitcp1.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.cp1, color = "white", lwd = 2) +
+   autolayer(fitcp1.ets$fitted, color = "blue")
+forecast.ets(fitcp1.ets,h=10)
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitcp1.holt<-holt(ts.cp1)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitcp1.holt)
+autoplot(ts.cp1, color = "white", lwd = 2) +
+   autolayer(fitcp1.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitcp1.hw<-hw(ts.cp1,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.cp1, color = "white", lwd = 2) +
+   autolayer(fitcp1.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.cp1)
+pacf(ts.cp1)
+```
+
+```{r}
+fitcp1.arima<-auto.arima(ts.cp1)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.cp1, color = "white", lwd = 2) +
+   autolayer(fitcp1.arima$fitted, color = "blue")
+forecast(fitcp1.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fitcp1.TBATS<-tbats(ts.cp1)
+autoplot(fitcp1.TBATS)
+summary(fitcp1.TBATS)
+checkresiduals(fitcp1.TBATS)
+autoplot(ts.cp1, color = "white", lwd = 2) +
+   autolayer(fitcp1.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.cp1, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitcp1.ets$fitted, color = "red")+autolayer (fitcp1.arima$fitted, color = "blue")+autolayer(fitcp1.holt$fitted, color = "green")+autolayer (fitcp1.hw$fitted, color = "yellow")+autolayer (fitcp1.TBATS$fitted, color = "white")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitcp1.ets,h=5)), autoplot(forecast(fitcp1.arima,h=5)),autoplot(forecast(fitcp1.holt,h=5)),autoplot(forecast(fitcp1.hw,h=5)),autoplot(forecast(fitcp1.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fcp1.ets <- function (y,h) forecast(fitcp1.ets,h=h)
+fcp1.arima <- function (y,h) forecast(fitcp1.arima,h=h)
+fcp1.holt<- function (y,h) forecast(fitcp1.holt,h=h)
+fcp1.hw<- function (y,h) forecast(fitcp1.hw,h=h)
+fcp1.TBATS<- function (y,h) forecast(fitcp1.TBATS,h=h)
+
+hmax<-5
+
+ecp1.ets<-na.omit(tsCV(ts.cp1,fcp1.ets,h=hmax))[,hmax]
+ecp1.arima<-na.omit(tsCV(ts.cp1,fcp1.arima,h=hmax))[,hmax]
+ecp1.holt<-na.omit(tsCV(ts.cp1,fcp1.holt,h=hmax))[,hmax]
+ecp1.hw<-na.omit(tsCV(ts.cp1,fcp1.hw,h=hmax))[,hmax]
+ecp1.TBATS<-na.omit(tsCV(ts.cp1,fcp1.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(ecp1.ets^2,ecp1.arima^2,ecp1.holt^2,ecp1.hw^2,ecp1.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vcp1<-fitcp1.ets$fitted
+ecp1<-abs(vcp1-ts.cp1)/ts.cp1
+summary(ecp1)
+mean(ecp1)
+```
+
+
+#### On opte à priori pour la méthode ETS(A,N,N) 
+
+
+
+
+# CP2
+
+```{r}
+#####visualisation
+ts.cp2<-ts(rev(b$cp2),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.cp2)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitcp2.ets<-ets(ts.cp2)
+# autoplot(fit3.ets)
+summary(fitcp2.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.cp2, color = "white", lwd = 2) +
+   autolayer(fitcp2.ets$fitted, color = "blue")
+forecast.ets(fitcp2.ets,h=10)
+```
+
+#### HOLT
+
+```{r echo=TRUE}
+
+fitcp2.holt<-holt(ts.cp2)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitcp2.holt)
+autoplot(ts.cp2, color = "white", lwd = 2) +
+   autolayer(fitcp2.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitcp2.hw<-hw(ts.cp2,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+autoplot(ts.cp2, color = "white", lwd = 2) +
+   autolayer(fitcp2.hw$fitted, color = "blue")
+```
+
+
+####ARIMA
+
+```{r}
+acf(ts.cp2)
+pacf(ts.cp2)
+```
+
+```{r}
+fitcp2.arima<-auto.arima(ts.cp2)
+# autoplot(fit3.arima)
+# summary(fit3.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.cp2, color = "white", lwd = 2) +
+   autolayer(fitcp2.arima$fitted, color = "blue")
+forecast(fitcp2.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r echo=TRUE}
+fitcp2.TBATS<-tbats(ts.cp2)
+plot(fitcp2.TBATS)
+summary(fitcp2.TBATS)
+checkresiduals(fitcp2.TBATS)
+autoplot(ts.cp2, color = "white", lwd = 2) +
+   autolayer(fitcp2.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.cp2, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitcp2.ets$fitted, color = "red")+autolayer (fitcp2.arima$fitted, color = "blue")+autolayer(fitcp2.holt$fitted, color = "green")+autolayer (fitcp2.hw$fitted, color = "pink")+autolayer (fitcp2.TBATS$fitted, color = "yellow")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitcp2.ets,h=5)), autoplot(forecast(fitcp2.arima,h=5)),autoplot(forecast(fitcp2.holt,h=5)),autoplot(forecast(fitcp2.hw,h=5)),autoplot(forecast(fitcp2.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fcp2.ets <- function (y,h) forecast(fitcp2.ets,h=h)
+fcp2.arima <- function (y,h) forecast(fitcp2.arima,h=h)
+fcp2.holt<- function (y,h) forecast(fitcp2.holt,h=h)
+fcp2.hw<- function (y,h) forecast(fitcp2.hw,h=h)
+fcp2.TBATS<- function (y,h) forecast(fitcp2.TBATS,h=h)
+
+hmax<-5
+
+ecp2.ets<-na.omit(tsCV(ts.cp2,fcp2.ets,h=hmax))[,hmax]
+ecp2.arima<-na.omit(tsCV(ts.cp2,fcp2.arima,h=hmax))[,hmax]
+ecp2.holt<-na.omit(tsCV(ts.cp2,fcp2.holt,h=hmax))[,hmax]
+ecp2.hw<-na.omit(tsCV(ts.cp2,fcp2.hw,h=hmax))[,hmax]
+ecp2.TBATS<-na.omit(tsCV(ts.cp2,fcp2.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(ecp2.ets^2,ecp2.arima^2,ecp2.holt^2,ecp2.hw^2,ecp2.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vcp2<-fitcp2.ets$fitted
+ecp2<-abs(vcp2-ts.cp2)/ts.cp2
+summary(ecp2)
+mean(ecp2)
+```
+
+
+#### On opte pour la méthode ETS(A,A,A)
+
+
+# CP4
+
+#### ETS 
+
+```{r echo=TRUE}
+ts.cp4<-ts(rev(b$cp4),start=c(2013, 1),frequency=2)
+fitcp4.ets<-ets(ts.cp4)
+# autoplot(fit3.ets)
+summary(fitcp4.ets)
+# checkresiduals(fit3.ets)
+autoplot(ts.cp4, color = "white", lwd = 2) +
+   autolayer(fitcp4.ets$fitted, color = "blue")
+forecast.ets(fitcp4.ets,h=10)
+```
+
+#### SES
+
+
+
+<!-- # CP5 -->
+
+<!-- ```{r} -->
+<!-- #####visualisation -->
+<!-- ts.cp5<-ts(rev(b$cp5),start=c(2013, 1),frequency=2) -->
+<!-- ggtsdisplay(ts.cp5) -->
+<!-- # plot(decompose(ts.pa3)) -->
+<!-- ``` -->
+
+
+<!-- #### ETS  -->
+
+<!-- ```{r include=FALSE} -->
+<!-- fitcp5.ets<-ets(ts.cp5) -->
+<!-- # autoplot(fit3.ets) -->
+<!-- #summary(fit3.ets) -->
+<!-- # checkresiduals(fit3.ets) -->
+<!-- autoplot(ts.cp5, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp5.ets$fitted, color = "blue") -->
+<!-- forecast.ets(fitcp5.ets,h=10) -->
+<!-- ``` -->
+
+<!-- #### HOLT -->
+
+<!-- ```{r echo=TRUE} -->
+
+<!-- fitcp5.holt<-holt(ts.cp5) -->
+<!-- # with or without dumping almost the same -->
+<!-- # forecast(fit12.holt) -->
+<!-- # autoplot(fit12.holt) -->
+<!-- # summary(fit12.holt) -->
+<!-- # checkresiduals(fit12.holt) -->
+<!-- forecast(fitcp5.holt) -->
+<!-- autoplot(ts.cp5, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp5.holt$fitted, color = "blue") -->
+
+<!-- ``` -->
+
+<!-- #### HOLT_Winters -->
+
+<!-- ```{r} -->
+<!-- fitcp5.hw<-hw(ts.cp5,h=10) -->
+<!-- # autoplot(fit3.hw) -->
+<!-- # summary(fit3.hw) -->
+<!-- # checkresiduals(fit3.hw)  -->
+<!-- autoplot(ts.cp5, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp5.hw$fitted, color = "blue") -->
+<!-- ``` -->
+
+
+<!-- ####ARIMA -->
+
+<!-- ```{r} -->
+<!-- acf(ts.cp5) -->
+<!-- pacf(ts.cp5) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- fitcp5.arima<-auto.arima(ts.cp5) -->
+<!-- # autoplot(fit3.arima) -->
+<!-- summary(fitcp5.arima) -->
+<!-- # checkresiduals(fit3.arima) -->
+<!-- autoplot(ts.cp5, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp5.arima$fitted, color = "blue") -->
+<!-- forecast(fitcp5.arima,h=10) -->
+
+<!-- ``` -->
+
+<!-- #### TBATS -->
+
+
+<!-- ```{r echo=TRUE} -->
+<!-- fitcp5.TBATS<-tbats(ts.cp5) -->
+<!-- autoplot(fitcp5.TBATS) -->
+<!-- summary(fitcp5.TBATS) -->
+<!-- checkresiduals(fitcp5.TBATS) -->
+<!-- autoplot(ts.cp5, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp5.TBATS$fitted, color = "blue") -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- #### Model comparison -->
+<!-- autoplot(ts.cp5, color = "black", lwd = 2) + -->
+<!--   # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) + -->
+<!--   # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) + -->
+<!--   autolayer (fitcp5.arima$fitted, color = "blue")+autolayer(fitcp5.holt$fitted, color = "green")+autolayer (fitcp5.hw$fitted, color = "yellow")+autolayer (fitcp5.TBATS$fitted, color = "white") -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- grid.arrange(autoplot(forecast(fitcp5.ets,h=5)), autoplot(forecast(fitcp5.arima,h=5)),autoplot(forecast(fitcp5.holt,h=5)),autoplot(forecast(fitcp5.hw,h=5)),autoplot(forecast(fitcp5.TBATS,h=5))) -->
+<!-- ``` -->
+
+<!-- #### Cross-validation -->
+<!-- ```{r} -->
+<!-- fcp5.ets <- function (y,h) forecast(fitcp5.ets,h=h) -->
+<!-- fcp5.arima <- function (y,h) forecast(fitcp5.arima,h=h) -->
+<!-- fcp5.holt<- function (y,h) forecast(fitcp5.holt,h=h) -->
+<!-- fcp5.hw<- function (y,h) forecast(fitcp5.hw,h=h) -->
+<!-- fcp5.TBATS<- function (y,h) forecast(fitcp5.TBATS,h=h) -->
+
+<!-- hmax<-5 -->
+
+<!-- ecp5.ets<-na.omit(tsCV(ts.cp5,fcp5.ets,h=hmax))[,hmax] -->
+<!-- ecp5.arima<-na.omit(tsCV(ts.cp5,fcp5.arima,h=hmax))[,hmax] -->
+<!-- ecp5.holt<-na.omit(tsCV(ts.cp5,fcp5.holt,h=hmax))[,hmax] -->
+<!-- ecp5.hw<-na.omit(tsCV(ts.cp5,fcp5.hw,h=hmax))[,hmax] -->
+<!-- ecp5.TBATS<-na.omit(tsCV(ts.cp5,fcp5.TBATS,h=hmax))[,hmax] -->
+
+<!-- summary(data.frame(ecp5.ets^2,ecp5.arima^2,ecp5.holt^2,ecp5.hw^2,ecp5.TBATS^2)) -->
+
+<!-- ``` -->
+
+
+
+
+<!-- #### Calcul de l'erreur -->
+
+<!-- ```{r echo=TRUE} -->
+<!-- vcp5<-fitcp5.TBATS$fitted.values -->
+<!-- ecp5<-abs(vcp5-ts.cp5)/ts.cp5 -->
+<!-- summary(ecp5) -->
+<!-- mean(ecp5) -->
+<!-- ``` -->
+
+
+<!-- #### On opte pour la méthode ARIMA(0,0,1)(0,0,1)[2].  -->
+
+
+
+<!-- # CP6 -->
+
+<!-- ```{r} -->
+<!-- #####visualisation -->
+<!-- ts.cp6<-ts(rev(b$cp6),start=c(2013, 1),frequency=2) -->
+<!-- ggtsdisplay(ts.cp6) -->
+<!-- # plot(decompose(ts.pa3)) -->
+<!-- ``` -->
+
+
+<!-- #### ETS  -->
+
+<!-- ```{r echo=TRUE} -->
+<!-- fitcp6.ets<-ets(ts.cp6) -->
+<!-- # autoplot(fit3.ets) -->
+<!-- #summary(fit3.ets) -->
+<!-- # checkresiduals(fit3.ets) -->
+<!-- autoplot(ts.cp6, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp6.ets$fitted, color = "blue") -->
+<!-- forecast.ets(fitcp6.ets,h=10) -->
+<!-- ``` -->
+
+<!-- #### HOLT -->
+
+<!-- ```{r include=FALSE} -->
+
+<!-- fitcp6.holt<-holt(ts.cp6) -->
+<!-- # with or without dumping almost the same -->
+<!-- # forecast(fit12.holt) -->
+<!-- # autoplot(fit12.holt) -->
+<!-- # summary(fit12.holt) -->
+<!-- # checkresiduals(fit12.holt) -->
+<!-- forecast(fitcp6.holt) -->
+<!-- autoplot(ts.cp6, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp6.holt$fitted, color = "blue") -->
+
+<!-- ``` -->
+
+<!-- #### HOLT_Winters -->
+
+<!-- ```{r} -->
+<!-- fitcp6.hw<-hw(ts.cp6,h=10) -->
+<!-- # autoplot(fit3.hw) -->
+<!-- # summary(fit3.hw) -->
+<!-- # checkresiduals(fit3.hw)  -->
+<!-- forecast(fitcp6.hw) -->
+<!-- autoplot(ts.cp6, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp6.hw$fitted, color = "blue") -->
+<!-- ``` -->
+
+
+<!-- ####ARIMA -->
+
+<!-- ```{r} -->
+<!-- acf(ts.cp6) -->
+<!-- pacf(ts.cp6) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- fitcp6.arima<-auto.arima(ts.cp6) -->
+<!-- # autoplot(fit3.arima) -->
+<!-- summary(fitcp6.arima) -->
+<!-- # checkresiduals(fit3.arima) -->
+<!-- autoplot(ts.cp6, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp6.arima$fitted, color = "blue") -->
+<!-- forecast(fitcp6.arima,h=10) -->
+
+<!-- ``` -->
+
+<!-- #### TBATS -->
+
+
+<!-- ```{r echo=TRUE} -->
+<!-- fitcp6.TBATS<-tbats(ts.cp6) -->
+<!-- autoplot(fitcp6.TBATS) -->
+<!-- summary(fitcp6.TBATS) -->
+<!-- checkresiduals(fitcp6.TBATS) -->
+<!-- autoplot(ts.cp6, color = "white", lwd = 2) + -->
+<!--    autolayer(fitcp6.TBATS$fitted, color = "blue") -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- #### Model comparison -->
+<!-- autoplot(ts.cp6, color = "black", lwd = 2) + -->
+<!--   # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) + -->
+<!--   # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) + -->
+<!--   autolayer(fitcp6.ets$fitted, color = "red")+autolayer (fitcp6.arima$fitted, color = "blue")+autolayer (fitcp6.hw$fitted, color = "yellow")+autolayer (fitcp6.TBATS$fitted, color = "pink") -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- grid.arrange(autoplot(forecast(fitcp6.ets,h=5)), autoplot(forecast(fitcp6.arima,h=5)),autoplot(forecast(fitcp6.holt,h=5)),autoplot(forecast(fitcp6.hw,h=5)),autoplot(forecast(fitcp6.TBATS,h=5))) -->
+<!-- ``` -->
+
+<!-- #### Cross-validation -->
+<!-- ```{r} -->
+<!-- fcp6.ets <- function (y,h) forecast(fitcp6.ets,h=h) -->
+<!-- fcp6.arima <- function (y,h) forecast(fitcp6.arima,h=h) -->
+<!-- fcp6.holt<- function (y,h) forecast(fitcp6.holt,h=h) -->
+<!-- fcp6.hw<- function (y,h) forecast(fitcp6.hw,h=h) -->
+<!-- fcp6.TBATS<- function (y,h) forecast(fitcp6.TBATS,h=h) -->
+
+<!-- hmax<-5 -->
+
+<!-- ecp6.ets<-na.omit(tsCV(ts.cp6,fcp6.ets,h=hmax))[,hmax] -->
+<!-- ecp6.arima<-na.omit(tsCV(ts.cp6,fcp6.arima,h=hmax))[,hmax] -->
+<!-- ecp6.holt<-na.omit(tsCV(ts.cp6,fcp6.holt,h=hmax))[,hmax] -->
+<!-- ecp6.hw<-na.omit(tsCV(ts.cp6,fcp6.hw,h=hmax))[,hmax] -->
+<!-- ecp6.TBATS<-na.omit(tsCV(ts.cp6,fcp6.TBATS,h=hmax))[,hmax] -->
+
+<!-- summary(data.frame(ecp6.ets^2,ecp6.arima^2,ecp6.holt^2,ecp6.hw^2,ecp6.TBATS^2)) -->
+
+<!-- ``` -->
+
+
+
+
+<!-- #### Calcul de l'erreur -->
+
+<!-- ```{r} -->
+<!-- vcp6<-fitcp6.arima$fitted -->
+<!-- ecp6<-abs(vcp6-ts.cp6)/ts.cp6 -->
+<!-- summary(ecp6) -->
+<!-- mean(ecp6) -->
+<!-- ``` -->
+
+<!-- #### On opte pour la méthode ARIMA(0,0,0)(0,1,1)[2] -->
+
+
+# CP56
+
+```{r}
+#####visualisation
+ts.cp56<-ts(as.numeric(z[15,2:21]),start=c(2013, 1),frequency=2)
+ggtsdisplay(ts.cp56)
+# plot(decompose(ts.pa3))
+```
+
+
+#### ETS 
+
+```{r echo=TRUE}
+fitcp56.ets<-ets(ts.cp56)
+# autoplot(fit3.ets)
+summary(fitcp56.ets)
+# # checkresiduals(fit3.ets)
+autoplot(ts.cp56, color = "white", lwd = 2) +
+   autolayer(fitcp56.ets$fitted, color = "blue")
+forecast.ets(fitcp56.ets,h=10)
+```
+
+#### HOLT
+
+```{r include=FALSE}
+
+fitcp56.holt<-holt(ts.cp56)
+# with or without dumping almost the same
+# forecast(fit12.holt)
+# autoplot(fit12.holt)
+# summary(fit12.holt)
+# checkresiduals(fit12.holt)
+forecast(fitcp56.holt)
+autoplot(ts.cp56, color = "white", lwd = 2) +
+   autolayer(fitcp56.holt$fitted, color = "blue")
+
+```
+
+#### HOLT_Winters
+
+```{r}
+fitcp56.hw<-hw(ts.cp56,h=10)
+# autoplot(fit3.hw)
+# summary(fit3.hw)
+# checkresiduals(fit3.hw) 
+forecast(fitcp56.hw)
+autoplot(ts.cp56, color = "white", lwd = 2) +
+   autolayer(fitcp56.hw$fitted, color = "blue")
+```
+
+```{r}
+acf(ts.cp56)
+pacf(ts.cp56)
+```
+
+```{r}
+fitcp56.arima<-auto.arima(ts.cp56)
+# autoplot(fit3.arima)
+summary(fitcp56.arima)
+# checkresiduals(fit3.arima)
+autoplot(ts.cp56, color = "white", lwd = 2) +
+   autolayer(fitcp56.arima$fitted, color = "blue")
+forecast(fitcp56.arima,h=10)
+
+```
+
+#### TBATS
+
+
+```{r include=FALSE}
+fitcp56.TBATS<-tbats(ts.cp56)
+autoplot(fitcp56.TBATS)
+checkresiduals(fitcp56.TBATS)
+autoplot(ts.cp56, color = "white", lwd = 2) +
+   autolayer(fitcp56.TBATS$fitted, color = "blue")
+```
+
+
+```{r}
+#### Model comparison
+autoplot(ts.cp56, color = "black", lwd = 2) +
+  # autolayer(bxcx(fit12.ets$fitted, lambda= BoxCox.lambda(ts.ac12) , InverseQ=TRUE), color = "blue", lwd = 1) +
+  # autolayer(bxcx(fit12.arima$fitted, lambda= BoxCox.lambda(ts.ac12), InverseQ=TRUE), color = "red", lwd = 1) +
+  autolayer(fitcp56.ets$fitted, color = "red")+autolayer (fitcp56.arima$fitted, color = "blue")+autolayer (fitcp56.hw$fitted, color = "yellow")+autolayer (fitcp56.TBATS$fitted, color = "pink")
+```
+
+
+```{r}
+grid.arrange(autoplot(forecast(fitcp56.ets,h=5)), autoplot(forecast(fitcp56.arima,h=5)),autoplot(forecast(fitcp56.holt,h=5)),autoplot(forecast(fitcp56.hw,h=5)),autoplot(forecast(fitcp56.TBATS,h=5)))
+```
+
+#### Cross-validation
+```{r}
+fcp56.ets <- function (y,h) forecast(fitcp56.ets,h=h)
+fcp56.arima <- function (y,h) forecast(fitcp56.arima,h=h)
+fcp56.holt<- function (y,h) forecast(fitcp56.holt,h=h)
+fcp56.hw<- function (y,h) forecast(fitcp56.hw,h=h)
+fcp56.TBATS<- function (y,h) forecast(fitcp56.TBATS,h=h)
+
+hmax<-5
+
+ecp56.ets<-na.omit(tsCV(ts.cp56,fcp56.ets,h=hmax))[,hmax]
+ecp56.arima<-na.omit(tsCV(ts.cp56,fcp56.arima,h=hmax))[,hmax]
+ecp56.holt<-na.omit(tsCV(ts.cp56,fcp56.holt,h=hmax))[,hmax]
+ecp56.hw<-na.omit(tsCV(ts.cp56,fcp56.hw,h=hmax))[,hmax]
+ecp56.TBATS<-na.omit(tsCV(ts.cp56,fcp56.TBATS,h=hmax))[,hmax]
+
+summary(data.frame(ecp56.ets^2,ecp56.arima^2,ecp56.holt^2,ecp56.hw^2,ecp56.TBATS^2))
+
+```
+
+
+
+
+#### Calcul de l'erreur
+
+```{r}
+vcp56<-fitcp56.ets$fitted
+ecp56<-abs(vcp56-ts.cp56)/ts.cp56
+summary(ecp56)
+mean(ecp56)
+```
+
+#### On opte pour la méthode ETS(M,N,M) 
+
+
+# Bilan semestriel simulé
+
+
+
+
+
+```{r include=FALSE}
+
+fita13_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fit3.ets$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitac45.arima$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitac6.hw$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitac7.arima$fitted, start=c(2013,1), end=c(2013,1))))
+
+fitp13_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitp3.ets$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2013,1), end=c(2013,1))))
+
+
+fitcp13_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2013,1), end=c(2013,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2013,1), end=c(2013,1))))
+
+
+fit13_1<-c(fita13_1,sum(fita13_1),fitp13_1,sum(fitp13_1),fitcp13_1,sum(fitcp13_1),sum(fitcp13_1)+sum(fitp13_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita13_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fit3.ets$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitac45.arima$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitac6.hw$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitac7.arima$fitted, start=c(2013,2), end=c(2013,2))))
+
+fitp13_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitp3.ets$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2013,2), end=c(2013,2))))
+
+
+fitcp13_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2013,2), end=c(2013,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2013,2), end=c(2013,2))))
+
+
+fit13_2<-c(fita13_2,sum(fita13_2),fitp13_2,sum(fitp13_2),fitcp13_2,sum(fitcp13_2),sum(fitcp13_2)+sum(fitp13_2))
+
+```
+
+
+
+
+```{r include=FALSE}
+
+fita14_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fit3.ets$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitac45.arima$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitac6.hw$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitac7.arima$fitted, start=c(2014,1), end=c(2014,1))))
+
+fitp14_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitp3.ets$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2014,1), end=c(2014,1))))
+
+
+fitcp14_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2014,1), end=c(2014,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2014,1), end=c(2014,1))))
+
+
+fit14_1<-c(fita14_1,sum(fita14_1),fitp14_1,sum(fitp14_1),fitcp14_1,sum(fitcp14_1),sum(fitcp14_1)+sum(fitp14_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita14_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fit3.ets$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitac45.arima$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitac6.hw$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitac7.arima$fitted, start=c(2014,2), end=c(2014,2))))
+
+fitp14_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitp3.ets$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2014,2), end=c(2014,2))))
+
+
+fitcp14_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2014,2), end=c(2014,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2014,2), end=c(2014,2))))
+
+
+fit14_2<-c(fita14_2,sum(fita14_2),fitp14_2,sum(fitp14_2),fitcp14_2,sum(fitcp14_2),sum(fitcp14_2)+sum(fitp14_2))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita15_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fit3.ets$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitac45.arima$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitac6.hw$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitac7.arima$fitted, start=c(2015,1), end=c(2015,1))))
+
+fitp15_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitp3.ets$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2015,1), end=c(2015,1))))
+
+
+fitcp15_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2015,1), end=c(2015,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2015,1), end=c(2015,1))))
+
+
+fit15_1<-c(fita15_1,sum(fita15_1),fitp15_1,sum(fitp15_1),fitcp15_1,sum(fitcp15_1),sum(fitcp15_1)+sum(fitp15_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita15_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fit3.ets$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitac45.arima$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitac6.hw$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitac7.arima$fitted, start=c(2015,2), end=c(2015,2))))
+
+fitp15_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitp3.ets$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2015,2), end=c(2015,2))))
+
+
+fitcp15_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2015,2), end=c(2015,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2015,2), end=c(2015,2))))
+
+
+fit15_2<-c(fita15_2,sum(fita15_2),fitp15_2,sum(fitp15_2),fitcp15_2,sum(fitcp15_2),sum(fitcp15_2)+sum(fitp15_2))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita16_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fit3.ets$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitac45.arima$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitac6.hw$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitac7.arima$fitted, start=c(2016,1), end=c(2016,1))))
+
+fitp16_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitp3.ets$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2016,1), end=c(2016,1))))
+
+
+fitcp16_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2016,1), end=c(2016,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2016,1), end=c(2016,1))))
+
+
+fit16_1<-c(fita16_1,sum(fita16_1),fitp16_1,sum(fitp16_1),fitcp16_1,sum(fitcp16_1),sum(fitcp16_1)+sum(fitp16_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita16_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fit3.ets$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitac45.arima$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitac6.hw$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitac7.arima$fitted, start=c(2016,2), end=c(2016,2))))
+
+fitp16_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitp3.ets$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2016,2), end=c(2016,2))))
+
+
+fitcp16_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2016,2), end=c(2016,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2016,2), end=c(2016,2))))
+
+
+fit16_2<-c(fita16_2,sum(fita16_2),fitp16_2,sum(fitp16_2),fitcp16_2,sum(fitcp16_2),sum(fitcp16_2)+sum(fitp16_2))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita17_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fit3.ets$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitac45.arima$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitac6.hw$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitac7.arima$fitted, start=c(2017,1), end=c(2017,1))))
+
+fitp17_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitp3.ets$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2017,1), end=c(2017,1))))
+
+
+fitcp17_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2017,1), end=c(2017,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2017,1), end=c(2017,1))))
+
+
+fit17_1<-c(fita17_1,sum(fita17_1),fitp17_1,sum(fitp17_1),fitcp17_1,sum(fitcp17_1),sum(fitcp17_1)+sum(fitp17_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita17_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fit3.ets$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitac45.arima$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitac6.hw$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitac7.arima$fitted, start=c(2017,2), end=c(2017,2))))
+
+fitp17_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitp3.ets$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2017,2), end=c(2017,2))))
+
+
+fitcp17_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2017,2), end=c(2017,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2017,2), end=c(2017,2))))
+
+
+fit17_2<-c(fita17_2,sum(fita17_2),fitp17_2,sum(fitp17_2),fitcp17_2,sum(fitcp17_2),sum(fitcp17_2)+sum(fitp17_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita18_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fit3.ets$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitac45.arima$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitac6.hw$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitac7.arima$fitted, start=c(2018,1), end=c(2018,1))))
+
+fitp18_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitp3.ets$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2018,1), end=c(2018,1))))
+
+
+fitcp18_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2018,1), end=c(2018,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2018,1), end=c(2018,1))))
+
+
+fit18_1<-c(fita18_1,sum(fita18_1),fitp18_1,sum(fitp18_1),fitcp18_1,sum(fitcp18_1),sum(fitcp18_1)+sum(fitp18_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita18_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fit3.ets$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitac45.arima$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitac6.hw$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitac7.arima$fitted, start=c(2018,2), end=c(2018,2))))
+
+fitp18_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitp3.ets$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2018,2), end=c(2018,2))))
+
+
+fitcp18_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2018,2), end=c(2018,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2018,2), end=c(2018,2))))
+
+
+fit18_2<-c(fita18_2,sum(fita18_2),fitp18_2,sum(fitp18_2),fitcp18_2,sum(fitcp18_2),sum(fitcp18_2)+sum(fitp18_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita19_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fit3.ets$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitac45.arima$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitac6.hw$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitac7.arima$fitted, start=c(2019,1), end=c(2019,1))))
+
+fitp19_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitp3.ets$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2019,1), end=c(2019,1))))
+
+
+fitcp19_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2019,1), end=c(2019,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2019,1), end=c(2019,1))))
+
+
+fit19_1<-c(fita19_1,sum(fita19_1),fitp19_1,sum(fitp19_1),fitcp19_1,sum(fitcp19_1),sum(fitcp19_1)+sum(fitp19_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita19_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fit3.ets$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitac45.arima$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitac6.hw$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitac7.arima$fitted, start=c(2019,2), end=c(2019,2))))
+
+fitp19_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitp3.ets$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2019,2), end=c(2019,2))))
+
+
+fitcp19_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2019,2), end=c(2019,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2019,2), end=c(2019,2))))
+
+
+fit19_2<-c(fita19_2,sum(fita19_2),fitp19_2,sum(fitp19_2),fitcp19_2,sum(fitcp19_2),sum(fitcp19_2)+sum(fitp19_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita20_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fit3.ets$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitac45.arima$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitac6.hw$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitac7.arima$fitted, start=c(2020,1), end=c(2020,1))))
+
+fitp20_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitp3.ets$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2020,1), end=c(2020,1))))
+
+
+fitcp20_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2020,1), end=c(2020,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2020,1), end=c(2020,1))))
+
+
+fit20_1<-c(fita20_1,sum(fita20_1),fitp20_1,sum(fitp20_1),fitcp20_1,sum(fitcp20_1),sum(fitcp20_1)+sum(fitp20_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita20_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fit3.ets$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitac45.arima$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitac6.hw$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitac7.arima$fitted, start=c(2020,2), end=c(2020,2))))
+
+fitp20_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitp3.ets$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2020,2), end=c(2020,2))))
+
+
+fitcp20_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2020,2), end=c(2020,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2020,2), end=c(2020,2))))
+
+
+fit20_2<-c(fita20_2,sum(fita20_2),fitp20_2,sum(fitp20_2),fitcp20_2,sum(fitcp20_2),sum(fitcp20_2)+sum(fitp20_2))
+
+```
+
+
+
+```{r include=FALSE}
+
+fita21_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fit3.ets$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitac45.arima$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitac6.hw$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitac7.arima$fitted, start=c(2021,1), end=c(2021,1))))
+
+fitp21_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitp3.ets$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2021,1), end=c(2021,1))))
+
+
+fitcp21_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2021,1), end=c(2021,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2021,1), end=c(2021,1))))
+
+
+fit21_1<-c(fita21_1,sum(fita21_1),fitp21_1,sum(fitp21_1),fitcp21_1,sum(fitcp21_1),sum(fitcp21_1)+sum(fitp21_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita21_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fit3.ets$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitac45.arima$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitac6.hw$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitac7.arima$fitted, start=c(2021,2), end=c(2021,2))))
+
+fitp21_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitp3.ets$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2021,2), end=c(2021,2))))
+
+
+fitcp21_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2021,2), end=c(2021,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2021,2), end=c(2021,2))))
+
+
+fit21_2<-c(fita21_2,sum(fita21_2),fitp21_2,sum(fitp21_2),fitcp21_2,sum(fitcp21_2),sum(fitcp21_2)+sum(fitp21_2))
+
+```
+
+
+```{r include=FALSE}
+
+fita22_1<-c(as.numeric(window(fitac12.arima$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fit3.ets$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitac45.arima$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitac6.hw$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitac7.arima$fitted, start=c(2022,1), end=c(2022,1))))
+
+fitp22_1<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitp3.ets$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitpa4.arima$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitpa5.holt$fitted, start=c(2022,1), end=c(2022,1))))
+
+
+fitcp22_1<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitcp2.ets$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitcp4.ets$fitted, start=c(2022,1), end=c(2022,1))),as.numeric(window(fitcp56.ets$fitted, start=c(2022,1), end=c(2022,1))))
+
+
+fit22_1<-c(fita22_1,sum(fita22_1),fitp22_1,sum(fitp22_1),fitcp22_1,sum(fitcp22_1),sum(fitcp22_1)+sum(fitp22_1))
+
+```
+
+
+```{r include=FALSE}
+
+fita22_2<-c(as.numeric(window(fitac12.arima$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fit3.ets$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitac45.arima$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitac6.hw$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitac7.arima$fitted, start=c(2022,2), end=c(2022,2))))
+
+fitp22_2<-c(as.numeric(window(fitpa12.ets$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitp3.ets$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitpa4.arima$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitpa5.holt$fitted, start=c(2022,2), end=c(2022,2))))
+
+
+fitcp22_2<-c(as.numeric(window(fitcp1.ets$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitcp2.ets$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitcp4.ets$fitted, start=c(2022,2), end=c(2022,2))),as.numeric(window(fitcp56.ets$fitted, start=c(2022,2), end=c(2022,2))))
+
+
+fit22_2<-c(fita22_2,sum(fita22_2),fitp22_2,sum(fitp22_2),fitcp22_2,sum(fitcp22_2),sum(fitcp22_2)+sum(fitp22_2))
+
+```
+
+```{r echo=FALSE}
+
+fita24_1<-c(as.numeric(window(ts.predac12, start=c(2024,1), end=c(2024,1))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(ts.predac45, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2024,1), end=c(2024,1))))
+
+fitp24_1<-c(as.numeric(window(ts.predpa12, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2024,1), end=c(2024,1))))
+
+
+fitcp24_1<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2024,1), end=c(2024,1))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2024,1), end=c(2024,1))))
+
+
+fit24_1<-c(fita24_1,sum(fita24_1),fitp24_1,sum(fitp24_1),fitcp24_1,sum(fitcp24_1),sum(fitcp24_1)+sum(fitp24_1))
+
+```
+
+```{r echo=FALSE}
+
+fita24_2<-c(as.numeric(window(ts.predac12, start=c(2024,2), end=c(2024,2))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(ts.predac45, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2024,2), end=c(2024,2))))
+
+fitp24_2<-c(as.numeric(window(ts.predpa12, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2024,2), end=c(2024,2))))
+
+
+fitcp24_2<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2024,2), end=c(2024,2))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2024,2), end=c(2024,2))))
+
+
+fit24_2<-c(fita24_2,sum(fita24_2),fitp24_2,sum(fitp24_2),fitcp24_2,sum(fitcp24_2),sum(fitcp24_2)+sum(fitp24_2))
+
+```
+
+
+```{r echo=FALSE}
+
+fita23_1<-c(as.numeric(window(ts.predac12, start=c(2023,1), end=c(2023,1))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(ts.predac45, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2023,1), end=c(2023,1))))
+
+fitp23_1<-c(as.numeric(window(ts.predpa12, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2023,1), end=c(2023,1))))
+
+
+fitcp23_1<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2023,1), end=c(2023,1))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2023,1), end=c(2023,1))))
+
+
+fit23_1<-c(fita23_1,sum(fita23_1),fitp23_1,sum(fitp23_1),fitcp23_1,sum(fitcp23_1),sum(fitcp23_1)+sum(fitp23_1))
+
+```
+
+```{r echo=FALSE}
+
+fita23_2<-c(as.numeric(window(ts.predac12, start=c(2023,2), end=c(2023,2))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(ts.predac45, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2023,2), end=c(2023,2))))
+
+fitp23_2<-c(as.numeric(window(ts.predpa12, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2023,2), end=c(2023,2))))
+
+
+fitcp23_2<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2023,2), end=c(2023,2))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2023,2), end=c(2023,2))))
+
+
+fit23_2<-c(fita23_2,sum(fita23_2),fitp23_2,sum(fitp23_2),fitcp23_2,sum(fitcp23_2),sum(fitcp23_2)+sum(fitp23_2))
+
+```
+
+```{r echo=FALSE}
+
+fita25_1<-c(as.numeric(window(ts.predac12, start=c(2025,1), end=c(2025,1))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(ts.predac45, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2025,1), end=c(2025,1))))
+
+fitp25_1<-c(as.numeric(window(ts.predpa12, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2025,1), end=c(2025,1))))
+
+
+fitcp25_1<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2025,1), end=c(2025,1))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2025,1), end=c(2025,1))))
+
+
+fit25_1<-c(fita25_1,sum(fita25_1),fitp25_1,sum(fitp25_1),fitcp25_1,sum(fitcp25_1),sum(fitcp25_1)+sum(fitp25_1))
+
+```
+
+```{r echo=FALSE}
+
+fita25_2<-c(as.numeric(window(ts.predac12, start=c(2025,2), end=c(2025,2))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(ts.predac45, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2025,2), end=c(2025,2))))
+
+fitp25_2<-c(as.numeric(window(ts.predpa12, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2025,2), end=c(2025,2))))
+
+
+fitcp25_2<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2025,2), end=c(2025,2))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2025,2), end=c(2025,2))))
+
+
+fit25_2<-c(fita25_2,sum(fita25_2),fitp25_2,sum(fitp25_2),fitcp25_2,sum(fitcp25_2),sum(fitcp25_2)+sum(fitp25_2))
+
+```
+
+```{r echo=FALSE}
+
+fita26_1<-c(as.numeric(window(ts.predac12, start=c(2026,1), end=c(2026,1))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(ts.predac45, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2026,1), end=c(2026,1))))
+
+fitp26_1<-c(as.numeric(window(ts.predpa12, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2026,1), end=c(2026,1))))
+
+
+fitcp26_1<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2026,1), end=c(2026,1))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2026,1), end=c(2026,1))))
+
+
+fit26_1<-c(fita26_1,sum(fita26_1),fitp26_1,sum(fitp26_1),fitcp26_1,sum(fitcp26_1),sum(fitcp26_1)+sum(fitp26_1))
+
+```
+
+```{r echo=FALSE}
+
+fita26_2<-c(as.numeric(window(ts.predac12, start=c(2026,2), end=c(2026,2))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(ts.predac45, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2026,2), end=c(2026,2))))
+
+fitp26_2<-c(as.numeric(window(ts.predpa12, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2026,2), end=c(2026,2))))
+
+
+fitcp26_2<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2026,2), end=c(2026,2))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2026,2), end=c(2026,2))))
+
+
+fit26_2<-c(fita26_2,sum(fita26_2),fitp26_2,sum(fitp26_2),fitcp26_2,sum(fitcp26_2),sum(fitcp26_2)+sum(fitp26_2))
+
+```
+
+```{r echo=FALSE}
+
+fita27_1<-c(as.numeric(window(ts.predac12, start=c(2027,1), end=c(2027,1))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(ts.predac45, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2027,1), end=c(2027,1))))
+
+fitp27_1<-c(as.numeric(window(ts.predpa12, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2027,1), end=c(2027,1))))
+
+
+fitcp27_1<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2027,1), end=c(2027,1))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2027,1), end=c(2027,1))))
+
+
+fit27_1<-c(fita27_1,sum(fita27_1),fitp27_1,sum(fitp27_1),fitcp27_1,sum(fitcp27_1),sum(fitcp27_1)+sum(fitp27_1))
+
+```
+
+```{r echo=FALSE}
+
+fita27_2<-c(as.numeric(window(ts.predac12, start=c(2027,2), end=c(2027,2))),as.numeric(window((forecast(fit3.ets,h=10))$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(ts.predac45, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitac6.hw,h=10)$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitac7.arima,h=10)$mean, start=c(2027,2), end=c(2027,2))))
+
+fitp27_2<-c(as.numeric(window(ts.predpa12, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitp3.ets,h=10)$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitpa4.arima,h=10)$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitpa5.holt,h=10)$mean, start=c(2027,2), end=c(2027,2))))
+
+
+fitcp27_2<-c(as.numeric(window(forecast(fitcp1.ets,h=10)$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitcp2.ets,h=10)$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitcp4.ets,h=10)$mean, start=c(2027,2), end=c(2027,2))),as.numeric(window(forecast(fitcp56.ets,h=10)$mean, start=c(2027,2), end=c(2027,2))))
+
+
+fit27_2<-c(fita27_2,sum(fita27_2),fitp27_2,sum(fitp27_2),fitcp27_2,sum(fitcp27_2),sum(fitcp27_2)+sum(fitp27_2))
+
+```
+
+```{r echo=FALSE}
+bss<-cbind(z$juin_2013,fit13_1,z$dec_2013,fit13_2,z$juin_2014,fit14_1,z$dec_2014,fit14_2,z$juin_2015,fit15_1,z$dec_2015,fit15_2,z$juin_2016,fit16_1,z$dec_2016,fit16_2,z$juin_2017,fit17_1,z$dec_2017,fit17_2,z$juin_2018,fit18_1,z$dec_2018,fit18_2,z$juin_2019,fit19_1,z$dec_2019,fit19_2,z$juin_2020,fit20_1,z$dec_2020,fit20_2,z$juin_2021,fit21_1,z$dec_2021,fit21_2,z$juin_2022,fit22_1,z$dec_2022,fit22_2,fit23_1,fit23_2,fit24_1,fit24_1,fit25_1,fit25_2,fit26_1,fit26_2,fit27_1,fit27_2)
+cn3 <- c("juin_2013","juin_2013_fitted","dec_2013","dec_2013_fitted","juin_2014","juin_2014_fitted","dec_2014","dec_2014_fitted","juin_2015","juin_2015_fitted","dec_2015","dec_2015_fitted","juin_2016","juin_2016_fitted","dec_2016","dec_2016_fitted","juin_2017","juin_2017_fitted","dec_2017","dec_2017_fitted","juin_2018","juin_2018_fitted","dec_2018","dec_2018_fitted","juin_2019","juin-2019_fitted","dec_2019","dec-2019_fitted","juin_2020","juin_2020_fitted","dec_2020","dec_2020_fitted","juin_2021","juin_2021_fitted","dec_2021","dec_2021_fitted","juin_2022","juin_2022_fitted","dec_2022","dec_2022_fitted","juin_2023_forecast","dec_2023_forecast","juin_2024_forecast","dec_2024_forecast","juin_2025_forecast","dec_2025_forecast","juin_2026_forecast","dec_2026_forecast","juin_2027_forecast","dec_2027_forecast") 
+
+rn1 <- c("AC12: Caisse et avoirs auprès de la BCT, CCP et TGT + Créances sur les établissements bancaires et financiers",
+        "AC3: Créances sur la clientèle",
+        "AC45: Portefeuille-titres commercial et Portefeuille d'investissement",
+        "AC6: Valeurs immobilisées",
+        "AC7: Autres actifs",
+        "Total actifs",
+        "PA12: Banque Centrale et CCP et Dépôts et avoirs des établissements bancaires et financiers",
+        "PA3: Dépôts et avoirs de la clientèle",
+        "PA4: Emprunts et Ressources spéciales",
+        "PA5: Autres passifs",
+        "Total passifs",
+        "CP1: Capital",
+        "CP2: Réserves",
+        "CP4: Autres capitaux propres",
+        "CP56: Résultat de l’exercice et résultats reportés",
+        "Total capitaux propres",
+        "Total capitaux propres et passifs")
+
+rownames(bss) <- rn1
+
+knitr::kable(bss, col.names = cn3, row.names = TRUE,caption = "Semestrial balance Sheet Comparison: Actual, Fitted, and Predicted Values")
+pander(bss) 
+
+```
+
+
+
+
+## Discussion
+
+```{r}
+error<-c()
+for (i in seq(from = 1, to = 39, by = 2)){
+    actual<-c(bss[,i])
+    predicted<-c(bss[,i+1])
+    relative_error <- abs(actual - predicted) / actual
+    error<-c(error,mean(relative_error))
+}
+print(error)
+mean(error)
+```
+
+
+## Discussion:
+
+#### L'augmentation du nombre d'observations de 8 à 20 a permis de réduire l'erreur moyenne de l'ajustement de 14.7% à 7%.
+
+#### Cette exploration a aussi permis de combiner les variables CP5 et CP6 en une seule variable CP56.
+
+#### l'ajustement de CP5 était impossible à cause de l'existence de plusieurs points excentriques (outliers). L'idée était de combiner le résultat reporté de l'année n avec le résultat de l'exercice de l'année n-1. 
+
+#### Enfin, ils est primordial de tenir compte des corrélations entre les variables du bilan pour mieux comprendre leurs dynamqiues.
+#### Pour ce faire, nous utiliserons dans ce qui suit des techniques comme VAR,VECM et VARMA. 
+
+
+

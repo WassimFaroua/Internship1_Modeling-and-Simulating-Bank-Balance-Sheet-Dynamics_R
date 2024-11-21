@@ -1,0 +1,754 @@
+---
+title: "Linear models"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(openxlsx)
+library(car)
+library(shiny)
+library(MASS)
+library(tidyverse)
+library(rstan)
+library(ggpubr)
+library(fitdistrplus)
+library(nortest)
+library(fitur)
+library(actuar)
+library(moments)
+library(AID)
+library(FAdist)
+library(rmarkdown)
+library(tinytex)
+library(numDeriv)
+library(rgl)
+```
+
+
+
+# Introduction
+
+On appelle modèle linéaire simple un modèle statistique qui peut s’écrire sous la forme suivante:
+
+$Y=X\theta+E$
+            
+Avec: \
+Y une v.a.r. que l’on observe i.e la variable réponse;  \ on suppose que la variance de Y est constante :
+c’est ce qu’on appelle l’hypothèse d’**homoscédasticité**.\
+
+* X: La variable explicative ou prédicteur, c'est une variable réelle, non aléatoire. \
+
+* $\theta$: le paramètre du modèle à estimer par des techniques statistiques appropriées.\
+
+* E:  est le terme d’erreur dans le modèle ; c’est une v.a.r. non observée pour laquelle on pose les hypothèses suivantes: \
+
+    * $E(E) = 0$ 
+    * $Var(E) = \sigma^2 > 0$ \
+    * $E \sim \mathcal{N}(0, \sigma^2)$ : Hypothèse de normalité des résidus. \
+
+Ces hypothèses impliquent la normalité de Y :
+$Y \sim \mathcal{N}(X\theta, \sigma^2)$. \
+Il s'agit bien d'un **modèle linéaire gaussien**. \
+
+
+# Linear Regression 
+
+## Introduction to linear regression 
+
+Linear regression is the statistical method for fitting a line to data where the relationship between two variables, x and y, can be modeled by a straight line with some error:
+
+$y=\beta_0 + \beta_1 x + \epsilon$
+
+
+The values $\beta_0$ and $\beta_1$ represent the model's parameters, and the error is represented by $\epsilon$. The parameters are estimated using data, and we write their point estimates as $b_0$ and $b_1$. When we use x to predict y, we usually call x the explanatory or predictor variable, and we call y the response; we also often drop the $\epsilon$ term when writing down the model since our main focus is often on the prediction of the average outcome.
+
+## Conditions for linear regression 
+### Linearity
+Correlation, which always takes values between $-1$ and $1$, describes the strength of the linear relationship between two variables. We denote the correlation by $R$.  
+
+To check this linearity, we can see the scatter plot of the data or the residuals plot. 
+
+### Nearly normal residuals 
+
+Generally, the residuals must be nearly normal. When this condition is found to be unreasonable, it is usually because of outliers or concerns about in uential
+points.  
+
+To check this condition we use histograms, normal probability plot of residuals and tests for normality (kolmogorov smirnoff, shapiro, QQ-plot ...).
+
+### Constant variability
+
+The variability of points around the least squares line remains roughly constant.
+To check this condition, we use residuals plot.
+
+## Simple linear regression
+
+Commençons par la génération des données et la vérification de  l'hypothèse de normalité: \
+```{r}
+set.seed(123)
+n <- 100  
+x<- rnorm(n, mean = 50, sd = 10) 
+y<- 2 *x + rnorm(n, mean = 0, sd = 5)
+hist(y)
+```
+
+
+```{r}
+ggdensity(y, add='mean', fill='blue')+stat_overlay_normal_density(color = "red", linetype = "dashed")
+```
+
+```{r}
+ggqqplot(y)
+```
+
+
+
+#### La variable Y suit bien une loi normale.\
+
+
+On procède ensuite à l'analyse du modèle étudié.
+
+
+## The $lm()$ Summary in R
+
+**Summary:**
+
+* **Residuals**: Difference (errors) between the regression model prediction and the actual value of y: $e_{i}= y_{i}-\hat{y}{i}$.\
+* **Coefficients**: These are the weights that minimize the sum of the square of the errors.  
+* **Residual Standard Error**: Is the standard deviation (the square root of variance) of the residuals (error). When computing variance, instead of dividing by n-1, divide by n - 1 - nb of variables involved.
+* **Multiple R-Squared**: Percent of the variance of Y intact after subtracting the residual error of the model. Also called the coefficient of determination, this is an oft-cited measurement of how well your model fits to the data. The bigger the error, the worse the remaining variance will appear.
+* **Adjusted R-Squared**: Same as multiple R-Squared but takes into account the number of samples and variables you’re using. The more variables you add, the more variance you’re going to explain.
+* **F-Statistic**: Global test to check if your model has at least one significant variable.  Takes into account number of variables and observations used.
+
+
+```{r}
+model1<-lm(y~x) #y~x
+summary(model1)
+```
+
+
+
+**Summary**
+
+* **Residual Standard Error**: 
+
+Residual standard error (RSE), also known as the root-mean-square error (RMSE)\
+Donné par la formule:\
+
+\begin{equation}
+\text{RSE} = \sqrt{\frac{1}{n - k - 1} \sum_{i=1}^n (y_i - \hat{y}_i)^2}
+\end{equation}
+
+ou plus simplement:\
+
+
+\begin{equation}
+\sqrt{\frac{SSR}{n-(1+k)}}
+\end{equation}
+where $k$ is the number of variables
+
+```{r include=FALSE}
+n<-length(model1$residuals) # Nb of data
+k<-length(model1$coefficients)-1 #Nb of variables, Subtract one to ignore intercept
+degreeFreedom <- n-1-k # n-1 - nb of variables
+cat("nb of Data n :",n,"\n",
+    "nb of variables k :",k,"\n", 
+    "degree of freedom :", degreeFreedom,"\n")
+```
+
+```{r Residual Standard Error}
+SSE<-sum(model1$residuals**2)
+Residual_standard_Error <- sqrt(SSE/degreeFreedom) #Like Standard Deviation
+cat("Residual_standard_Error :",Residual_standard_Error,"\n")
+```
+
+* **Multiple R-Squared**:  
+
+$R^{2}$ is the proportion of variability in $y$ explained by the model.
+
+$$R^{2}=1-\frac{SS_{res}}{SST}$$
+
+```{r Multiple R-Squared}
+#Multiple R-Squared (Coefficient of Determination)
+SSyy<-sum((y-mean(y))**2) #Ho: All coefficients are zero
+SSE<-sum(model1$residuals**2) #Ha: At least one coefficient is non zero
+Multiple_R_Squared <- (SSyy-SSE)/SSyy  #Alternatively 1-SSE/SSyy
+cat("Multiple R-Squared :",Multiple_R_Squared,"\n")
+```
+
+* **Adjusted R-Squared**:   
+
+$$R^{2}= 1- (\frac{SSE}{SST} \times \frac{n-1}{n-k-1})$$
+
+ where $k$ is the number of predictors.  
+ 
+Adjusted $R^{2}$ applies a penalty for the number of predictors included in the model. We always choose models with higher $R^{2}_{adj}$ over others 
+
+```{r Adjusted R-Squared}
+Adjusted_R_Squared <- 1-(SSE/degreeFreedom) / (SSyy/(n-1))   
+# Alternatively: 1 - (SSE/SSyy) * (n-1)/degreeFreedom
+cat("Adjusted R-Squared :",Adjusted_R_Squared,"\n")
+```
+
+If you have 100 observations (n) and 5 variables, you’ll be dividing by 100-5-1 = 94.  If you have 20 variables instead, you’re dividing by 100-20-1 = 79.  As the denominator gets smaller, the results get larger: 99 /94 = 1.05; 79/94 = 1.25. A larger normalizing value is going to make the Adjusted R-Squared worse since we’re subtracting its product from one.
+
+* **F-Statistic**:  
+
+F-statistic is the ratio of explained to unexplained variability:   
+
+$$ F=\frac{MS_{reg}}{MS_{res}}$$
+
+
+```{r F-Statistic}
+F_Statistic <- ((SSyy-SSE)/k) / (SSE/degreeFreedom)
+cat("F Statistic  :",F_Statistic,"\n",
+    "p-value     :",pf(F_Statistic, k, degreeFreedom, lower.tail=F))
+```
+
+* **Coefficients**:
+
+Les estimateurs de $\beta_0$ et $\beta_1$ notés respectivement $\hat{\beta}_0$ and $\hat{\beta}_1$ sont des variables aléatoires qui suivent la loi normale. \
+
+Ils sont calculés par le biais de la méthode OLS (ordinary least square) en minimisant la somme des résidus au carré: \
+$\text{SSR} = \sum_{i=1}^n (y_i - \hat{y}_i)^2$
+Avec $\hat{y}_i = \hat{\beta}_0 + \hat{\beta}_1 x_i$ la valeur prédite par le modèle. \
+
+On obtient alors: \
+
+$\hat{\beta}_0 = \bar{y} - \hat{\beta}_1 \bar{x}$ \
+
+$\hat{\beta}_1 = \frac{\sum_{i=1}^n (x_i - \bar{x})(y_i - \bar{y})}{\sum_{i=1}^n (x_i - \bar{x})^2}$
+
+```{r Coefficients}
+model1$coefficients
+summary(model1)[[4]]
+```
+
+1. *Std. Error*   
+
+$SE(\hat{\beta}_0) = \sqrt{\hat{\sigma}^2 \left(\frac{1}{n} + \frac{\sum_{i=1}^n (x_i - \bar{x})^2}{\bar{x}^2}\right)}$ \
+
+$SE(\hat{\beta}_1) = \sqrt{\frac{\hat{\sigma}^2}{\sum_{i=1}^n (x_i - \bar{x})^2}}$\
+Avec $\sigma^2$ la vraie valeur théorique de la variance des résidus.\
+
+
+
+L'erreur standard ou Std. Error représente la variation estimée des coefficients due à  la variabilité d'échantillonnage.
+Cela veut dire qu'un échantillon différent peut conduire à des coefficients différents,et cette variation des échantillons est estimée par l'erreur standard du coefficient correspondant.\
+
+Donc les Std. Errors sont les quantités qui estiment les variations des valeurs prédites par rapport à la valeur réelle.\
+
+
+Il est à noter que les méthodes des mondres carrés (OLS) et du maximum de vraisemblance (MLE) sont équivalentes lorsque les résidus sont normalement répartis.\
+
+
+
+```{r}
+StdError_slope <- Residual_standard_Error*sqrt(sum((model1$model$x)^2)/n/sum((model1$model$x-mean(model1$model$x))^2))
+
+StdError_x <- Residual_standard_Error/sqrt(sum((model1$model$x-mean(model1$model$x))^2))
+cat("Std. Error of slope  :",StdError_slope,"\n",
+    "Std. Error of x1    :",StdError_x,"\n")
+
+
+```
+
+
+2. *t value*:   
+
+Estimate divided by Std. Error
+
+3. *Pr(>|t|)*:  
+
+Look up your t value in a T distribution table with the given degrees of freedom.
+
+* *Testing for the slope*   
+
+Is the explanatory variable a significant predictor of the response variable? 
+  + $H_0$(nothing going on): slope = 0.
+  + $H_1$(something going on): slope $\ne$ 0.
+ and for this we use the t-static: 
+ 
+ $$T= \frac{point\quad estimate - null \quad value}{SE}$$
+ 
+ 
+ $$T = \frac{b_{1}-0}{SE_{b1}}$$
+
+ $$df=n-k-1$$
+ where $k$ is the number of predictors.
+
+
+
+
+
+
+### Effectuons maintenant l'analyse des résidus: \
+
+```{r}
+plot(model1)
+boxplot(model1$residuals)
+```
+
+
+On remarque une médiane proche de zéro, le premier et le troisième quantile ont presque la même amplitude, de même pour les valeurs maximale et minimale. On peut conclure que les résidus sont répartis de manière symétrique par rapport à 0 ce qui est en accord avec l'hypothèse de normalité des résidus : $E \sim \mathcal{N}(0, \sigma^2)$. \
+
+
+Le Residual Plot vérifie cette hypothèse et le qq-plot l'affirme aussi (variance constante par rapport à 0).\
+Les graphes contiennent cependant quelques points aberrants excentriques  "outliers".\
+
+
+Le residual vs leverage plot représente les "Standardized Residuals" donnés par la formule: \
+
+
+
+$$\text{Standardized Residuals} = \frac{\text{Residuals}}{\text{Estimated Standard Deviation of Residuals}} \ $$
+
+en fonction du leverage "effet de levier" qui indique dans quelle mesure un point de données peut influencer la forme de la droite de régression (du modèle).\
+Lorsqu'un point a un faible leverage, l'élimination de ce point n'affecte pas le modèle de manière significative.\
+
+
+Au contraire, si on a des points qui ont un grand leverage, lorsqu'on les élimine le modèle (droite) changera de manière signficative, en particulier les points qui se trouvent au delà de la distance de cook (la région délimité par un trait discontinu ) sont mal ajustés par le modèle et leur élimination résulte en un changement important dans le modèle (l'allure de la droite). Dans notre cas on n'a pas des points qui sont situés au delà de la distance de Cook.\
+
+
+
+
+## Utlisation des différentes méthodes d'optimisation pour trouver $\beta_0$ et $\beta_1$
+
+```{r}
+m= c("Nelder-Mead", "BFGS","CG", "L-BFGS-B", "SANN") 
+
+SSR<- function(p, x, y) {
+  beta_0<- p[1]
+  beta_1<- p[2]
+  sum((y - beta_0- beta_1* x)^2)
+}
+for (i in 1:length(m)){
+opt<-optim(c(beta_0 = 1, beta_1 = 0), fn = SSR, x = x, y = y, method = m[i], hessian = TRUE)
+print(paste(m[i],": "))
+print(opt$par)
+print("**************************")
+# print(opt$hessian)
+# print(paste("det =", det(opt$hessian)))
+# print(eigen(opt$hessian))
+
+# beta_0_values <- seq(0, 3, length.out = 50)  # Replace with your desired range and resolution
+# beta_1_values <- seq(0, 3, length.out = 50)  # Replace with your desired range and resolution
+# grid <- expand.grid(beta_0 = beta_0_values, beta_1 = beta_1_values)
+# 
+# 
+# ssr_values <- apply(grid, 1, function(row) SSR(row, x, y))
+# 
+# 
+# ssr_matrix <- matrix(ssr_values, nrow = length(beta_0_values))
+# 
+# open3d()
+# plot3d(grid$beta_0, grid$beta_1, ssr_values, type = "n",
+#        xlab = "beta_0", ylab = "beta_1", zlab = "SSR", main = "")
+# 
+# 
+# # points3d(grid$beta_0, grid$beta_1, ssr_values, col = "blue", size = 2)
+# 
+# 
+# surface3d(beta_0_values , beta_1_values, ssr_matrix, color = "red", alpha = 0.5)
+# 
+# rglwidget()
+
+
+}
+
+```
+On remarque que lm utilise la méthode BFGS pour faire l'optimisation.
+
+
+
+## Cas où x et y sont liés par une relation quadratique
+
+
+
+```{r}
+set.seed(123)
+n <- 100  
+x1<- rnorm(n, mean = 2.5, sd = 0.4) 
+y1<-  x1^2 + rnorm(n, mean = 0, sd = 3)
+hist(y1)
+model2<-lm(y1~x1) 
+qplot(x1,y1, geom="point")+geom_smooth(method="lm", se= FALSE)#qplot(x,y)
+summary(model2)
+plot(model2)
+```
+
+
+
+
+
+## Effet des valeurs aberrantes
+
+
+```{r}
+set.seed(100)
+x3<- rnorm(n, mean = 20, sd =3 ) 
+y3<- 3*x3 + rnorm(n, mean = 0, sd = 1)
+print(y3)
+hist(y3)
+y3<-c(y3,0.005,90,250)
+x3<-c(x3,rnorm(3, mean = 20, sd =3 ))
+hist(y3)
+model3<-lm(y3~x3) 
+qplot(x3,y3, geom="point")+geom_smooth(method="lm", se= FALSE)#qplot(x,y)
+summary(model3)
+plot(model3)
+```
+
+ 
+## Effet de la variation du nombre de points
+
+```{r}
+n<-c(200,100,50,25,10)
+for (i in 1:length(n)){
+set.seed(123)
+print(paste("n= ",n[i]))
+x4<- rnorm(n[i], mean = 20, sd =3 ) 
+y4<- 6*x4 + rnorm(n[i], mean = 0, sd = 1)
+hist(y4)
+model4<-lm(y4~x4) 
+qplot(x4,y4, geom="point")+geom_smooth(method="lm", se= FALSE)#qplot(x,y)
+summary(model4)
+plot(model4)
+}
+```
+
+
+
+### Application de la méthode lm() sur un exemple concret de données: 
+
+```{r Read Data}
+data = read.csv("donnees/data-marketing-budget-12mo.csv", header = TRUE, colClasses = c("numeric", "numeric", "numeric"))
+
+
+```
+
+```{r Simple (One Variable) Using lm()}
+simple.fit = lm(Sales~Spend, data = data)
+summary(simple.fit)
+```
+
+### Let's perform an analysis of variance (ANOVA) on the fitted model:
+
+#### What is ANOVA?
+
+* ANOVA also known as Analysis of variance is used to investigate relations between variables in R. It is a type of hypothesis testing for population variance. It enables to assess whether observed variations in means are statistically significant or the result of chance by comparing the variation **within** groups to the variation **between** groups.\
+
+
+$H0$: The default assumption, or null hypothesis, is that there is no meaningful relationship or impact between the variables.
+ 
+$H1$: The opposite of the null hypothesis. It implies that there is a significant relationship, difference, or link among the population’s variables.
+
+```{r anova}
+anova(simple.fit)
+```
+
+
+* **Sum of squares: represents the variability that the model is able to account for.**  
+
+  + total variability in $y$: $SST = \sum{(y-\bar{y})^{2}}$
+  + unexplained variability in $y$ (residuals): $SS_{Res}=\sum{(y-\hat{y})^{2}}=\sum{e_i^2}$
+  + Explained variability in $y$: $SS_{Reg}= SST- SS_{Res}$
+
+* **Df: Degrees of freedom** 
+
+  + total degrees of freedom : $df_{Tot}= n-1$
+  + regression degrees of freedom: $df_{reg}=1$ (only 1 predictor for simple linear regression)
+  + residual degrees of freedom: $df_{res}=df_{Tot}-df_{Reg}$
+
+* **Mean squares: the variance explained by each component is represented by the mean squares**
+  + $MS_{regression} = \frac{SS_{reg}}{df_{reg}}$
+  + $MS_{residuals} = \frac{SS_{res}}{df_{res}}$
+
+* **Residuals: Relative deviations from the group mean, are often known as residuals and their summary statistics.**:
+
+\begin{equation}
+ Y-\hat{Y}
+\end{equation}
+
+* **F-value**: It is the measure used to compare the mean squares both within and between groups.
+
+* **Pr(>F)**: The F-statistics p-value, which denotes the factors’ statistical significance.
+Residuals: 
+
+
+
+## Multiple regression
+### Math of linear regression
+$$\mathbf{y} = \mathbf{X} \cdot \mathbf{\beta} + \epsilon \quad where \;
+\mathbf{y} = \left[ \begin{array}{c} y_1 \\ y_2 \\ y_3 \\ \ldots \\ y_n \end{array} \right]
+, \; 
+\mathbf{X} = \left[ \begin{array}{ccccc} 1 & x_{11} & x_{12} & \ldots & x_{1p} \\ 1 & x_{21} & x_{22} & \ldots & x_{2p} \\ 1 & x_{31} & x_{32} & \ldots & x_{3p}\\\ldots & \ldots & \ldots & \ldots & \ldots \\ 1 & x_{n1} & x_{n2} & \ldots & x_{np} \end{array} \right] 
+, \; 
+\mathbf{\beta} = \left[ \begin{array}{c} \beta_0 \\ \beta_1 \\ \beta_2 \\ \ldots \\ \beta_p \end{array} \right]$$
+
+the estimate $\hat{\mathbf{\beta}}$ that minimizes squared error between $\mathbf{y}$ and fitted values $\mathbf{X} \cdot \mathbf{\beta}$ is:
+
+$$\hat{\mathbf{\beta}} = \left(\mathbf{X}^T \cdot \mathbf{X} \right)^{-1} \cdot \mathbf{X}^T \cdot \mathbf{y}  \qquad with \; \mathbf{X} \cdot \hat{\mathbf{\beta}} = \hat{\mathbf{y}}$$
+the residual noise $\hat{\sigma}^2$ (mean squared error) as :
+
+$$\hat{\sigma}^2 = \frac{(\mathbf{y} - \mathbf{X} \cdot \hat{\mathbf{\beta}})^T \cdot (\mathbf{y} - \mathbf{X} \cdot \hat{\mathbf{\beta}})}{n - p - 1}$$
+
+Estimated covariances for linear regression coefficient estimates are given using the following formula:
+
+$$\widehat{\text{Var}}(\hat{\mathbf{\beta}}) = \hat{\sigma}^2  \left(\mathbf{X}^T \cdot \mathbf{X} \right)^{-1}$$
+
+The square root of the diagonal of $\widehat{\text{Var}}(\hat{\mathbf{\beta}})$ are the standard errors for each coefficient. The off-diagonal terms are estimated covariances between parameter estimates, which is closely related to the estimated correlations.
+
+### Example
+the well-known “Boston” data set from the MASS library. the Boston data set contains 14 economic, geographic, and demographic variables for 506 tracts in the city of Boston from the early 1990s. The response variable is the median home value in thousands of US dollars: ‘medv’.
+
+```{r}
+suppressMessages(library(MASS))
+y <- Boston$medv
+# Matrix of feature variables from Boston
+X <- as.matrix(Boston[-ncol(Boston)])
+# vector of ones with same length as rows in Boston
+int <- rep(1, length(y))
+# Add intercept column to X
+X <- cbind(int, X)
+# Implement closed-form solution
+betas <- solve(t(X) %*% X) %*% t(X) %*% y
+# Round for easier viewing
+betas <- round(betas, 2)
+# print(betas)
+```
+
+Now compare our results to those produced by the lm() function (using QR decomposition). 
+
+```{r}
+# Linear regression model
+lm.mod <- lm(medv ~ ., data=Boston)
+# Round for easier viewing
+lm.betas <- round(lm.mod$coefficients, 2)
+# Create data.frame of results
+results <- data.frame(our.results=betas, lm.results=lm.betas)
+print(results)
+```
+
+
+```{r}
+# n <- nrow(bb.df)
+# p <- ncol(bb.df) - 1
+
+#Get predicted values of y, x times beta values
+yHat <- X %*% betas
+#Get Residuals or epsilon values(y - yHatt)
+Residuals <- y - yHat
+```
+
+### Multiple Linear Regression Using lm()
+```{r Multiple Linear Regression Using lm()}
+multi.fit = lm(Sales~Spend+Month, data=data)
+summary(multi.fit)
+```
+
+
+### Analyzing Residuals
+Anyone can fit a linear model in R.  The real test is analyzing the residuals (the error or the difference between actual and predicted results).
+
+There are four things to look for when analyzing residuals.
+
+1. The mean of the errors is zero (and the sum of the errors is zero)
+2. The distribution of the errors are normal.
+3. All of the errors are independent.
+4. Variance of errors is constant (Homoscedastic)
+
+```{r simple.fit}
+layout(matrix(c(1,1,2,3),2,2,byrow=T))
+#Spend x Residuals Plot
+plot(simple.fit$resid~data$Spend[order(data$Spend)],
+ main="Spend x Residuals\nfor Simple Regression", xlab="Marketing Spend", ylab="Residuals")
+abline(h=0,lty=2)
+#Histogram of Residuals
+hist(simple.fit$resid, main="Histogram of Residuals", ylab="Residuals")
+#Q-Q Plot
+qqnorm(simple.fit$resid)
+qqline(simple.fit$resid)
+```
+
+The plots don’t seem to be very close to a normal distribution, but we can also use a statistical test.
+
+```{r multi.fit}
+layout(matrix(c(1,2,3,4),2,2,byrow=T))
+plot(multi.fit$fitted, rstudent(multi.fit),
+ main="Multi Fit Studentized Residuals",
+ xlab="Predictions",ylab="Studentized Resid",
+ ylim=c(-2.5,2.5))
+abline(h=0, lty=2)
+plot(data$Month, multi.fit$resid,
+ main="Residuals by Month",
+ xlab="Month",ylab="Residuals")
+abline(h=0,lty=2)
+hist(multi.fit$resid,main="Histogram of Residuals")
+qqnorm(multi.fit$resid)
+qqline(multi.fit$resid)
+```
+1. Histogram of residuals does not look normally distributed.
+2. However, the QQ-Plot shows only a handful of points off of the normal line.
+
+
+* **Residuals are normally distributed**
+The histogram and QQ-plot are the ways to visually evaluate if the residual fit a normal distribution.
+
+1. If the histogram looks like a bell-curve it might be normally distributed.
+2 .If the QQ-plot has the vast majority of points on or very near the line, the residuals may be normally distributed.
+
+
+The Jarque-Bera test (in the fBasics library, which checks if the skewness and kurtosis of your residuals are similar to that of a normal distribution. The Null hypothesis of the jarque-bera test is that skewness and kurtosis of data are both equal to zero (same as the normal distribution).
+
+```{r , warning=FALSE, message=FALSE}
+library(fBasics)
+# jarqueberaTest(simple.fit$resid) #Test residuals for normality
+jarqueberaTest(simple.fit$resid)@test$p.value
+```
+
+With a p value of 0.6195, we fail to reject the null hypothesis that the skewness and kurtosis of residuals are statistically equal to zero.
+
+```{r , warning=FALSE, message=FALSE}
+library(fBasics)
+# jarqueberaTest(multi.fit$resid) #Test residuals for normality
+jarqueberaTest(multi.fit$resid)@test$p.value
+```
+We fail to reject the Jarque-Bera null hypothesis (p-value = 0.5059)
+
+* **Residuals are independent**
+The Durbin-Watson test is used in time-series analysis to test if there is a trend in the data based on previous instances – e.g. a seasonal trend or a trend every other data point.
+
+Using the lmtest library, we can call the “dwtest” function on the model to check if the residuals are independent of one another.
+
+The Null hypothesis of the Durbin-Watson test is that the errors are serially UNcorrelated.
+
+```{r, message=FALSE, warning=FALSE}
+library(lmtest) #dwtest
+dwtest(simple.fit) #Test for independence of residuals
+```
+
+Based on the results, we can reject the null hypothesis that the errors are serially uncorrelated.  This means we have more work to do.
+
+Let’s try going through these motions for the multiple regression model.
+
+```{r}
+library(lmtest) #dwtest
+dwtest(multi.fit) #Test for independence of residuals
+```
+
+We fail to reject the Durbin-Watson test’s null hypothesis (p-value 0.3133)
+
+
+* **Residuals have constant variance**
+Constant variance can be checked by looking at the “Studentized” residuals – normalized based on the standard deviation.  “Studentizing” lets you compare residuals across models.
+
+The Multi Fit Studentized Residuals plot shows that there aren’t any obvious outliers.  If a point is well beyond the other points in the plot, then you might want to investigate.  Based on the plot above, I think we’re okay to assume the constant variance assumption.  More data would definitely help fill in some of the gaps.
+
+
+Here’s the full code below
+```{r}
+
+#/////Simple Regression/////
+simple.fit = lm(Sales~Spend,data=data)
+summary(simple.fit)
+ 
+#Loading the necessary libraries
+library(lmtest) #dwtest
+library(fBasics) #JarqueBeraTest
+ 
+#Testing normal distribution and independence assumptions
+jarqueberaTest(simple.fit$resid) #Test residuals for normality
+#Null Hypothesis: Skewness and Kurtosis are equal to zero
+dwtest(simple.fit) #Test for independence of residuals
+#Null Hypothesis: Errors are serially UNcorrelated
+ 
+#Simple Regression Residual Plots
+layout(matrix(c(1,1,2,3),2,2,byrow=T))
+#Spend x Residuals Plot
+plot(simple.fit$resid~data$Spend[order(data$Spend)],
+     main="Spend x Residuals\nfor Simple Regression",
+     xlab="Marketing Spend", ylab="Residuals")
+abline(h=0,lty=2)
+#Histogram of Residuals
+hist(simple.fit$resid, main="Histogram of Residuals",
+     ylab="Residuals")
+#Q-Q Plot
+qqnorm(simple.fit$resid)
+qqline(simple.fit$resid)
+ 
+#///////////Multiple Regression Example///////////
+ 
+multi.fit = lm(Sales~Spend+Month, data=data)
+summary(multi.fit)
+ 
+#Residual Analysis for Multiple Regression
+dwtest(multi.fit) #Test for independence of residuals
+#Null Hypothesis: Errors are serially UNcorrelated
+jarqueberaTest(multi.fit$resid) #Test residuals for normality
+#Null Hypothesis: Skewness and Kurtosis are equal to zero
+ 
+#Multiple Regression Residual Plots
+layout(matrix(c(1,2,3,4),2,2,byrow=T))
+plot(multi.fit$fitted, rstudent(multi.fit),
+     main="Multi Fit Studentized Residuals",
+     xlab="Predictions",ylab="Studentized Resid",
+     ylim=c(-2.5,2.5))
+abline(h=0, lty=2)
+plot(data$Month, multi.fit$resid,
+     main="Residuals by Month",
+     xlab="Month",ylab="Residuals")
+abline(h=0,lty=2)
+hist(multi.fit$resid,main="Histogram of Residuals")
+qqnorm(multi.fit$resid)
+qqline(multi.fit$resid)
+```
+
+### Backward elimination 
+
+**Using adjusted $R^{2}$**  
+
+1. Start with the full model.  
+2. Drop one variable at a time and record adjusted $R^{2}$ of each smaller model.  
+3. Pick the model with the highest increase in adjusted $R^{2}$.  
+4. Repeat until none of the models yield an increase in adjusted $R^{2}$.  
+
+**Using p-value**  
+
+1. Start with the full model.  
+2. Drop the variable with the highest p-value.  
+3. Repeat until all variables left in the model are significant.  
+
+### Forward selection  
+
+**Using $R^{2}_{adj}$**  
+
+1. Start with single predictor regression of response vs each explanatory variable.  
+2. Pick the model with the highest adjusted $R^2$.  
+3. Add the remaining variables one at a time to the existing model and pick the model with the highest adjusted $R^2$.  
+4. Repeat until the addition of any of the remaining variable does not result in higher $R^{2}_{adj}$.  
+
+**Using p-value**  
+
+1. Start with single predictor regression of response vs each explanatory variable.   
+2. Pick the variable with the lowest significant variable.   
+3. Add the remaining variable one at a time to the existing model and pick the variable with the lowest significant p-value.   
+4. Repeat until any of the remaining variables do not have a significant p-value.   
+
+
+
+
+
+
+
+
+              
+              
+              
+
+
+          
+
+

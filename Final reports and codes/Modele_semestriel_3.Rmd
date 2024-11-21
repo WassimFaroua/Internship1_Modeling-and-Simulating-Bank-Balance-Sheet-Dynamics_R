@@ -1,0 +1,384 @@
+---
+title: "Modele_semestriel_3"
+output: html_document
+date: "2023-09-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(openxlsx)
+library(car)
+library(shiny)
+library(MASS)
+library(tidyverse)
+library(rstan)
+library(ggpubr)
+library(fitdistrplus)
+library(nortest)
+library(fitur)
+library(actuar)
+library(moments)
+library(AID)
+library(FAdist)
+library(rmarkdown)
+library(tinytex)
+library(numDeriv)
+library(rgl)
+library(lmtest)
+library(pander)
+library(sae)
+library(zoo)
+library(lmtest) 
+library(forecast)
+library(fBasics)
+library(GGally)
+library(broom)
+options(scipen = 999,digits=3)
+ b8<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem2.xlsx")
+ b8$date<-as.Date(b8$date,origin = "1899-12-30")
+ z<- read.xlsx("C:/Users/wassi/OneDrive/Bureau/BilanSem_trans.xlsx")
+```
+
+```{r}
+# ggpairs(b8[,2:21])
+# pairs(b8[,2:ncol(b8)])
+# cor(b8$ac3,b8$pa3)
+
+b9<-cbind(AC12=b8$ac1+b8$ac2,AC3=b8$ac3,AC45=b8$ac4+b8$ac5,AC6=b8$ac6,AC7=b8$ac7,PA12=b8$pa1+b8$pa2,PA3=b8$pa3,PA4=b8$pa4,PA5=b8$pa5,TP=b8$tp,CP1=b8$cp1,CP2=b8$cp2,CP4=b8$cp4,CP56= na.omit(as.numeric(z[15,])),TCP=b8$tcp,TB=b8$tb)
+b9<-data.frame(b9)
+cm<-cor(b9,method="pearson")
+view(cm)
+
+```
+#### A partir de la matrice de corrélation des variables du bilan, on peut obtenir une première idée sur la dépendance de chaque variable pour construire un modèle de départ.
+
+#### Check model summary: eliminate insignificant predictors (high p-values) and look for R-adjusted evolution.
+#### Check for multicollinearity with vif() function;#In general, a VIF greater than 10 suggests a problematic amount of collinearity.
+#### Carry on until fitting the best model (highest possible  R-adjusted )
+#### Step() function tries multiple lm combos, we might also select the direction: backward,forward or both 
+#### We will eliminate sum variables TP, TB, TCP to avoid colinearity issues.
+
+## AC12
+
+```{r}
+#lmac12<-lm(formula=b9$AC12~.,data=b9) with all variables
+
+#Essai 1:
+
+lmac12<-lm(formula=b9$AC12~b9$AC45+ b9$AC6+ b9$AC7+b9$PA3+ b9$PA4 + b9$PA5 + b9$CP1 + b9$CP2 + b9$CP56,data=b9)
+summary(lmac12)
+vif(lmac12)
+print(summary(lmac12)$adj.r.squared)
+#Essai 2:
+lmac12<-lm(formula = b9$AC12 ~ b9$AC45 + b9$CP1 + b9$CP2+b9$CP56+b9$PA4, data = b9)
+summary(lmac12)
+vif(lmac12)
+print(summary(lmac12)$adj.r.squared)
+#Essai3:
+lmac12<-step(lmac12, direction="both")
+summary(lmac12)
+vif(lmac12)
+print(summary(lmac12)$adj.r.squared)
+#predict.lm(lmac12,data.frame(A45=555555,CP1=789,CP2=897846,CP56=78852)) a revoir
+```
+
+
+#### Conclusion: AC12 ~ -1.045*AC45 + 37.408 *CP1 + 1.707*CP2 + 1.050 *CP56 - 3645039.824
+
+
+## AC3
+
+```{r}
+#Essai 1:
+
+lmac3<-lm(formula=b9$AC3~b9$AC45+ b9$AC6+ b9$AC7+b9$PA3+ b9$PA12 + b9$PA5 + b9$CP1 + b9$CP2 + b9$CP56,data=b9)
+summary(lmac3)
+vif(lmac3)
+print(summary(lmac3)$adj.r.squared)
+#Essai 2:
+lmac3<-lm(formula=b9$AC3~b9$AC45+ b9$AC7+ b9$PA3+ b9$CP1+b9$CP2,data=b9)
+summary(lmac3)
+vif(lmac3)
+print(summary(lmac3)$adj.r.squared)
+#Essai3:
+lmac3<-step(lmac3, direction="both")
+summary(lmac3)
+vif(lmac3)
+print(summary(lmac3)$adj.r.squared)
+```
+
+#### Conclusion: AC3 ~ 0.913*AC45 -3.397*AC7  -1.356 *CP2 + 0.566*PA3
+
+
+
+
+## AC45
+
+```{r}
+#Essai 1:
+
+lmac45<-lm(formula=b9$AC45~b9$AC12+ b9$AC3+ b9$AC6+ b9$AC7+b9$PA3+b9$PA4+ b9$PA12 + b9$PA5 + b9$CP1 + b9$CP2 + b9$CP56,data=b9)
+summary(lmac45)
+vif(lmac45)
+print(summary(lmac3)$adj.r.squared)
+
+#Essai 2:
+
+lmac45<-lm(formula=b9$AC45~b9$AC12+ b9$AC3+ b9$AC7+b9$PA4+ b9$PA12 + b9$PA5 + b9$CP1 + b9$CP56,data=b9)
+summary(lmac45)
+vif(lmac45)
+print(summary(lmac3)$adj.r.squared)
+#Essai3:
+lmac45<-step(lmac45, direction="both")
+summary(lmac45)
+vif(lmac45)
+print(summary(lmac45)$adj.r.squared)
+```
+
+#### Conclusion: AC3 ~ 0.6019*AC3 +3.0873*AC7+34.5257*CP1 + 0.8305*PA4 -1.1376*CP56-7422762.4156
+
+
+
+## A6
+
+```{r}
+#Essai 1:
+
+lmac6<-lm(formula=b9$AC6~b9$AC12+ b9$AC3+ b9$AC7+b9$PA3+b9$PA4 + b9$PA5 + b9$CP1 + b9$CP2 + b9$CP56,data=b9)
+summary(lmac6)
+vif(lmac6)
+print(summary(lmac6)$adj.r.squared)
+
+#Essai 2:
+
+lmac6<-lm(formula=b9$AC6~b9$AC7+ b9$CP2 + b9$CP56,data=b9)
+summary(lmac6)
+vif(lmac6)
+print(summary(lmac6)$adj.r.squared)
+#Essai3:
+lmac6<-step(lmac6, direction="both")
+summary(lmac6)
+vif(lmac6)
+print(summary(lmac6)$adj.r.squared)
+```
+
+#### Conclusion: AC6 ~ -0.570*AC7+ 0.4*CP2 + 0.568*CP56-48296.988
+
+
+## AC7
+
+```{r}
+#Essai 1:
+
+lmac7<-lm(formula=b9$AC7~b9$AC12+ b9$AC3+b9$AC45+ b9$AC6+b9$PA3+b9$PA12+ b9$PA5 + b9$CP1 + b9$CP2 + b9$CP56,data=b9)
+summary(lmac7)
+vif(lmac7)
+print(summary(lmac7)$adj.r.squared)
+#Essai 2:
+lmac7<-lm(formula=b9$AC7~b9$AC12+ b9$AC3+ b9$AC6+b9$PA3+b9$PA12,data=b9)
+summary(lmac7)
+vif(lmac7)
+print(summary(lmac7)$adj.r.squared)
+#Essai3:
+lmac3<-step(lmac7, direction="both")
+summary(lmac7)
+vif(lmac7)
+print(summary(lmac7)$adj.r.squared)
+```
+
+
+#### Conclusion: AC7 ~ -0.1481*AC12 -0.2884*AC3-0.3828*AC6+0.19 *PA12 +0.2604*PA3
+
+
+
+
+
+## PA12
+
+```{r}
+#Essai 1:
+
+lmpa12<-lm(formula=b9$PA12~b9$AC45+b9$AC7+b9$AC3+b9$AC6+ b9$CP1 + b9$CP2,data=b9)
+summary(lmpa12)
+vif(lmpa12)
+print(summary(lmpa12)$adj.r.squared)
+
+#Essai 2:
+
+lmpa12<-lm(formula=b9$PA12~b9$AC45+b9$AC7+b9$AC6+ b9$CP1 + b9$CP2,data=b9)
+summary(lmpa12)
+vif(lmpa12)
+print(summary(lmpa12)$adj.r.squared)
+#Essai3:
+lmpa12<-step(lmpa12, direction="both")
+summary(lmpa12)
+vif(lmpa12)
+print(summary(lmpa12)$adj.r.squared)
+```
+
+#### Conclusion: PA12 ~  0.518 *AC45+ 44.514*CP1-1.410*CP2--4606954.531
+
+
+
+
+## PA3
+
+```{r}
+#Essai 1:
+
+lmpa3<-lm(formula=b9$PA3~ b9$AC6+ b9$PA5 + b9$CP1 ,data=b9)
+summary(lmpa3)
+vif(lmpa3)
+print(summary(lmpa3)$adj.r.squared)
+
+#Essai2:
+lmpa3<-step(lmpa3, direction="both")
+summary(lmpa3)
+vif(lmpa3)
+print(summary(lmpa3)$adj.r.squared)
+```
+
+#### Conclusion: pa3 ~ + b9$AC7*AC6 -6.03*CP1 + 3.05*PA5 + 4507277.69
+
+
+
+## PA4
+
+```{r}
+#Essai 1:
+
+lmpa4<-lm(formula=b9$PA4~b9$AC12+ b9$AC45+ b9$AC6+b9$PA12+b9$PA3,data=b9)
+summary(lmpa4)
+vif(lmpa4)
+print(summary(lmpa4)$adj.r.squared)
+
+#Essai2:
+lmpa4<-step(lmpa4, direction="both")
+summary(lmpa4)
+vif(lmpa4)
+print(summary(lmpa4)$adj.r.squared)
+```
+
+#### Very low R²: PA4 has a weak linear correlation with the rest of the variables.
+
+
+## PA5
+
+```{r}
+#Essai 1:
+
+lmpa5<-lm(formula=b9$PA5~b9$AC45+ b9$AC3+ b9$AC6+b9$PA3+ b9$CP2,data=b9)
+summary(lmpa5)
+vif(lmpa5)
+print(summary(lmpa5)$adj.r.squared)
+
+#Essai2:
+lmpa5<-step(lmpa5, direction="both")
+summary(lmpa5)
+vif(lmpa5)
+print(summary(lmpa5)$adj.r.squared)
+```
+
+#### Conclusion: PA5 ~ -0.6410*AC6+ 0.1182*PA3 -338253.4621
+
+
+
+
+## CP1
+
+```{r}
+#Essai 1:
+
+lmcp1<-lm(formula=b9$CP1~b9$AC12+ b9$AC3+ b9$AC7+ b9$AC6+ b9$AC45+ b9$PA12+ b9$PA3 + b9$CP2 + b9$CP56,data=b9)
+summary(lmcp1)
+vif(lmcp1)
+print(summary(lmcp1)$adj.r.squared)
+
+#Essai 2:
+
+lmcp1<-lm(formula=b9$CP1~ b9$AC7+ b9$AC6+ b9$PA12 + b9$CP2 + b9$CP56,data=b9)
+summary(lmcp1)
+vif(lmcp1)
+print(summary(lmcp1)$adj.r.squared)
+#Essai3:
+lmcp1<-step(lmcp1, direction="both")
+summary(lmcp1)
+vif(lmcp1)
+print(summary(lmcp1)$adj.r.squared)
+```
+
+#### Conclusion: CP1 ~ 0.03306*AC7+ 0.00999*CP2 + 0.00634*PA12 + 109975.33219 (insignificant :CP1(le capital)=cst )
+
+
+
+
+## CP2
+
+```{r}
+#Essai 1:
+
+lmcp2<-lm(formula=b9$CP2~b9$AC12+ b9$AC3+ b9$AC6+ b9$AC45+ b9$AC7+ b9$PA12+ b9$PA3+ b9$PA5  +b9$CP56,data=b9)
+summary(lmcp2)
+vif(lmcp2)
+print(summary(lmcp2)$adj.r.squared)
+
+#Essai 2:
+
+lmcp2<-lm(formula=b9$CP2~b9$AC12+ b9$AC6+ b9$AC45 +b9$CP56,data=b9)
+summary(lmcp2)
+vif(lmcp2)
+print(summary(lmcp2)$adj.r.squared)
+#Essai3:
+lmcp2<-step(lmcp2, direction="both")
+summary(lmcp2)
+vif(lmcp2)
+print(summary(lmcp2)$adj.r.squared)
+```
+
+#### Conclusion: CP2 ~ 1.2185*AC6 + 0.2678*AC45 + 0.2661*AC12 -0.8918 *CP56-94719.9720
+
+
+## CP4 =cst.
+
+## CP56
+
+```{r}
+#Essai 1:
+
+lmcp56<-lm(formula=b9$CP56~b9$AC12+ b9$AC6+ b9$AC45+ b9$AC7+ b9$PA3+b9$CP2+b9$CP1,data=b9)
+summary(lmcp56)
+vif(lmcp56)
+print(summary(lmcp56)$adj.r.squared)
+
+#Essai 2:
+
+lmcp56<-lm(formula=b9$CP56~b9$AC12+ b9$AC6+ b9$AC7+b9$CP2,data=b9)
+summary(lmcp56)
+vif(lmcp56)
+print(summary(lmcp56)$adj.r.squared)
+#Essai3:
+lmcp56<-step(lmcp56, direction="both")
+summary(lmcp56)
+vif(lmcp56)
+print(summary(lmcp56)$adj.r.squared)
+```
+
+#### Conclusion: CP56 ~ 0.6664*AC7+ 0.0597*AC12+0.8606*AC6 -0.3775*cp2+48358.8010
+
+
+```{r}
+ff<-data.frame()
+ff<-cbind(b9$AC12,predict.lm(lmac12),b9$AC3,predict.lm(lmac3),b9$AC45,predict.lm(lmac45),b9$AC6,predict.lm(lmac6),b9$AC7,predict.lm(lmac7),b9$PA12,predict.lm(lmpa12),b9$PA3,predict.lm(lmpa3),b9$PA4,predict.lm(lmpa4),b9$PA5,predict.lm(lmpa5),b9$CP2,predict.lm(lmcp2),b9$CP56,predict.lm(lmcp56))
+rr <- c("juin_2013","dec_2013","juin_2014","dec_2014","juin_2015","dec_2015","juin_2016","dec_2016","juin_2017","dec_2017","juin_2018","dec_2018","juin_2019","dec_2019","juin_2020","dec_2020","juin_2021","dec_2021","juin_2022","dec_2022")
+cc<-c("AC12","AC12_fit","AC3","AC3_fit","AC45","AC45-fit","AC6","AC6_fit","AC7","AC7_fit","PA12","PA12_fit","PA3","PA3_fit","PA4","PA4_fit","PA5","PA5_fit","CP2","CP2_fit","CP56","CP56_fit")
+
+rownames(ff) <- rr
+
+knitr::kable(ff, col.names = cc, row.names = TRUE,caption = "Semestrial balance Sheet Comparison: Actual vs Fitted with lm")
+pander(ff) 
+
+```
+
+
+
+
